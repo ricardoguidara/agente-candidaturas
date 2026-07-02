@@ -116,7 +116,7 @@ def sidebar_config() -> None:
             - `OPENAI_API_KEY`
             - `OPENAI_MODEL`
             - `GOOGLE_SHEET_ID`
-            - `GOOGLE_SERVICE_ACCOUNT`
+            - `GOOGLE_SERVICE_ACCOUNT_JSON`
             """
         )
 

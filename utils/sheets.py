@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import gspread
@@ -17,9 +18,22 @@ class SheetsClientError(RuntimeError):
 
 
 def _service_account_info() -> dict:
+    json_text = st.secrets.get("GOOGLE_SERVICE_ACCOUNT_JSON")
+    if json_text:
+        try:
+            return json.loads(json_text)
+        except json.JSONDecodeError as exc:
+            raise SheetsClientError(
+                "`GOOGLE_SERVICE_ACCOUNT_JSON` contém JSON inválido. "
+                "Cole o JSON inteiro da service account dentro de três aspas simples."
+            ) from exc
+
     info = st.secrets.get("GOOGLE_SERVICE_ACCOUNT")
     if not info:
-        raise SheetsClientError("Configure `GOOGLE_SERVICE_ACCOUNT` em `st.secrets`.")
+        raise SheetsClientError(
+            "Configure `GOOGLE_SERVICE_ACCOUNT_JSON` em `st.secrets`. "
+            "O formato antigo `GOOGLE_SERVICE_ACCOUNT` ainda é aceito."
+        )
     return dict(info)
 
 

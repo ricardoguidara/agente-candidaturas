@@ -99,19 +99,26 @@ OPENAI_API_KEY = "sk-..."
 OPENAI_MODEL = "gpt-4o-mini"
 GOOGLE_SHEET_ID = "id-da-sua-planilha"
 
-[GOOGLE_SERVICE_ACCOUNT]
-type = "service_account"
-project_id = "..."
-private_key_id = "..."
-private_key = "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
-client_email = "..."
-client_id = "..."
-auth_uri = "https://accounts.google.com/o/oauth2/auth"
-token_uri = "https://oauth2.googleapis.com/token"
-auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
-client_x509_cert_url = "..."
-universe_domain = "googleapis.com"
+GOOGLE_SERVICE_ACCOUNT_JSON = '''
+{
+  "type": "service_account",
+  "project_id": "...",
+  "private_key_id": "...",
+  "private_key": "-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n",
+  "client_email": "...",
+  "client_id": "...",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "...",
+  "universe_domain": "googleapis.com"
+}
+'''
 ```
+
+Cole o JSON inteiro baixado no Google Cloud dentro de três aspas simples (`'''`). Esse formato evita erros de TOML com quebras de linha da chave privada.
+
+O formato antigo com `[GOOGLE_SERVICE_ACCOUNT]` continua compatível, mas o formato `GOOGLE_SERVICE_ACCOUNT_JSON` é o recomendado.
 
 5. Compartilhe a planilha com o `client_email` da service account.
 
