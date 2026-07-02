@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -20,6 +21,21 @@ from utils.sheets import (
 
 BASE_DIR = Path(__file__).parent
 PROMPTS_DIR = BASE_DIR / "prompts"
+CV_INVALIDO_MSG = (
+    "CV contém placeholders ou dados inválidos. "
+    "Ajuste o prompt ou revise a saída antes de gerar o PDF."
+)
+PADROES_CV_INVALIDO = [
+    "[Seu",
+    "[Nome",
+    "[Data",
+    "[Cidade",
+    "[Universidade",
+    "Lorem ipsum",
+    "Endereço",
+    "Endereco",
+    "https://ricardoguidara.com/(https://ricardoguidara.com/)",
+]
 
 
 st.set_page_config(
@@ -52,6 +68,56 @@ def criar_prompt_completo(prompt: str, perfil: str, vaga: dict, analise: dict | 
             json.dumps(analise, ensure_ascii=False, indent=2),
         )
     return conteudo
+
+
+def validar_cv_para_pdf(cv_texto_final: str) -> list[str]:
+    problemas = []
+    texto_lower = cv_texto_final.lower()
+
+    for padrao in PADROES_CV_INVALIDO:
+        if padrao.lower() in texto_lower:
+            problemas.append(f"Padrão inválido encontrado: {padrao}")
+
+    for linha in cv_texto_final.splitlines():
+        linha_limpa = linha.strip()
+        tem_rotulo_telefone = re.search(r"\btelefone\b", linha_limpa, flags=re.IGNORECASE)
+        tem_numero_real = re.search(r"\d{8,}", linha_limpa)
+        if tem_rotulo_telefone and not tem_numero_real:
+            problemas.append("Campo Telefone sem dado real.")
+
+    return problemas
+
+
+def mostrar_lista(titulo: str, itens: list[str]) -> None:
+    st.markdown(f"**{titulo}**")
+    if itens:
+        for item in itens:
+            st.markdown(f"- {item}")
+    else:
+        st.caption("Nenhum item informado.")
+
+
+def mostrar_analise(analise: dict) -> None:
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Fit score", analise["fit_score"])
+    m2.metric("Prioridade", analise["prioridade"])
+    m3.metric("Decisão", analise["decisao"])
+    m4.metric("Versão CV", analise["versao_cv_recomendada"])
+
+    st.markdown(f"**Expectativa salarial:** {analise['expectativa_salarial']}")
+    st.markdown(f"**Próxima ação:** {analise['proxima_acao']}")
+    st.markdown(f"**Justificativa:** {analise['justificativa']}")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        mostrar_lista("Pontos fortes", analise["pontos_fortes"])
+        mostrar_lista("Lacunas", analise["lacunas"])
+    with col2:
+        mostrar_lista("Red flags", analise["red_flags"])
+        mostrar_lista("Palavras-chave ATS", analise["palavras_chave_ats"])
+
+    with st.expander("JSON completo da análise", expanded=False):
+        st.json(analise)
 
 
 def inicializar_estado() -> None:
@@ -187,17 +253,21 @@ def main() -> None:
     if st.session_state.analise:
         st.subheader("Análise estruturada")
         analise = st.session_state.analise
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Fit score", analise["fit_score"])
-        m2.metric("Prioridade", analise["prioridade"])
-        m3.metric("Decisão", analise["decisao"])
-        m4.metric("Versão CV", analise["versao_cv_recomendada"])
-        st.json(analise, expanded=False)
+        mostrar_analise(analise)
 
         with col_pacote:
             if st.button("Gerar pacote de candidatura", type="primary", use_container_width=True):
                 try:
                     pacote = gerar_pacote(vaga, analise)
+                    problemas_cv = validar_cv_para_pdf(pacote["cv_texto"])
+                    if problemas_cv:
+                        st.session_state.pacote = pacote
+                        st.session_state.pdf_bytes = None
+                        with st.expander("Problemas encontrados no CV", expanded=True):
+                            for problema in problemas_cv:
+                                st.markdown(f"- {problema}")
+                        raise ValueError(CV_INVALIDO_MSG)
+
                     pdf_bytes = gerar_cv_pdf(
                         nome="Ricardo Guidara",
                         cargo_alvo=vaga.get("Cargo") or vaga.get("Vaga") or "Candidatura",
@@ -238,13 +308,16 @@ def main() -> None:
         pacote = st.session_state.pacote
         st.subheader("Pacote de candidatura")
 
-        st.download_button(
-            "Baixar CV em PDF",
-            data=st.session_state.pdf_bytes,
-            file_name="CV_Ricardo_Guidara.pdf",
-            mime="application/pdf",
-            use_container_width=True,
-        )
+        if st.session_state.pdf_bytes:
+            st.download_button(
+                "Baixar CV em PDF",
+                data=st.session_state.pdf_bytes,
+                file_name="CV_Ricardo_Guidara.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
+        else:
+            st.warning(CV_INVALIDO_MSG)
 
         tabs = st.tabs(["CV", "Carta", "LinkedIn", "Formulário", "Checklist"])
         tabs[0].text_area("Texto final do CV", pacote["cv_texto"], height=420)

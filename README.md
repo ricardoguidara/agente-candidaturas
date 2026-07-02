@@ -14,9 +14,20 @@ Esta versão implementa apenas o **Agente 2: Candidatura de Alta Aderência**. E
 - Gera análise estruturada em JSON.
 - Gera CV, carta de apresentação, mensagem LinkedIn, respostas de formulário e checklist.
 - Gera CV em PDF com ReportLab.
+- Bloqueia a geração do PDF se o CV contiver placeholders ou dados inválidos.
 - Disponibiliza download direto do PDF no Streamlit.
 - Atualiza a linha da vaga na planilha.
 - Registra o pacote gerado na aba `Outputs`.
+
+## Qualidade do output
+
+A integração técnica está validada: o app lê a planilha, chama a OpenAI API, gera análise, pacote de candidatura e PDF.
+
+O app não deve gerar CV com placeholders. Antes de criar o PDF, o texto do CV é validado contra padrões como `[Seu`, `[Nome`, `[Data`, `[Cidade`, `[Universidade`, `Lorem ipsum`, `Endereço`, telefone sem dado real e link de portfólio quebrado.
+
+Se o CV contiver placeholders ou dados inválidos, o PDF é bloqueado e a vaga não é atualizada como `CV gerado`.
+
+Os dados canônicos do perfil de Ricardo ficam em `prompts/perfil_base_ricardo.md`. Atualize esse arquivo quando houver mudanças reais de experiência, formação, idiomas, ferramentas, portfólio ou regras salariais.
 
 ## Estrutura
 
@@ -140,6 +151,7 @@ streamlit run app.py
 ## Observações
 
 - O CV é sempre gerado em PDF.
+- O app não deve gerar CV com placeholders ou dados inventados.
 - O app usa respostas estruturadas em JSON para a análise da vaga.
 - A geração de conteúdo depende da qualidade da descrição da vaga na planilha.
 - Revise manualmente o pacote antes de enviar qualquer candidatura.
