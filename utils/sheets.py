@@ -5,8 +5,12 @@ import os
 from typing import Any
 
 import gspread
-import streamlit as st
 from google.oauth2.service_account import Credentials
+
+try:
+    import streamlit as st
+except Exception:
+    st = None
 
 
 VAGAS_WORKSHEET = "Vagas_CRM"
@@ -74,8 +78,11 @@ class SheetsClientError(RuntimeError):
 
 
 def _secret(nome: str, default: Any = None) -> Any:
-    if os.getenv(nome):
-        return os.getenv(nome)
+    env_value = os.environ.get(nome)
+    if env_value:
+        return env_value
+    if st is None:
+        return default
     try:
         return st.secrets.get(nome, default)
     except Exception:
@@ -83,17 +90,71 @@ def _secret(nome: str, default: Any = None) -> Any:
 
 
 def _info(mensagem: str) -> None:
-    try:
-        st.info(mensagem)
-    except Exception:
-        print(f"INFO: {mensagem}")
+    if st is not None:
+        try:
+            st.info(mensagem)
+            return
+        except Exception:
+            pass
+    print(f"INFO: {mensagem}")
 
 
 def _warning(mensagem: str) -> None:
+    if st is not None:
+        try:
+            st.warning(mensagem)
+            return
+        except Exception:
+            pass
+    print(f"AVISO: {mensagem}")
+
+
+def _streamlit_service_account() -> dict | None:
+    if st is None:
+        return None
     try:
-        st.warning(mensagem)
+        info = st.secrets.get("GOOGLE_SERVICE_ACCOUNT")
     except Exception:
-        print(f"AVISO: {mensagem}")
+        return None
+    return dict(info) if info else None
+
+
+def _streamlit_secret_json() -> str | None:
+    if st is None:
+        return None
+    try:
+        return st.secrets.get("GOOGLE_SERVICE_ACCOUNT_JSON")
+    except Exception:
+        return None
+
+
+def _parse_service_account_json(json_text: str) -> dict:
+    try:
+        return json.loads(json_text)
+    except json.JSONDecodeError as exc:
+        raise SheetsClientError(
+            "`GOOGLE_SERVICE_ACCOUNT_JSON` contém JSON inválido. "
+            "Cole o JSON inteiro da service account dentro de três aspas simples."
+        ) from exc
+
+
+def _service_account_info() -> dict:
+    env_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
+    if env_json:
+        return _parse_service_account_json(env_json)
+
+    streamlit_json = _streamlit_secret_json()
+    if streamlit_json:
+        return _parse_service_account_json(streamlit_json)
+
+    info = _streamlit_service_account()
+    if info:
+        return info
+
+    raise SheetsClientError(
+        "GOOGLE_SERVICE_ACCOUNT_JSON não configurado. No Streamlit, cadastre em Secrets. "
+        "No GitHub Actions, cadastre em Settings > Secrets and variables > Actions."
+    )
 
 
 def ensure_row_length(row: list[Any], target_length: int) -> list[Any]:
@@ -102,30 +163,13 @@ def ensure_row_length(row: list[Any], target_length: int) -> list[Any]:
     return row
 
 
-def _service_account_info() -> dict:
-    json_text = _secret("GOOGLE_SERVICE_ACCOUNT_JSON")
-    if json_text:
-        try:
-            return json.loads(json_text)
-        except json.JSONDecodeError as exc:
-            raise SheetsClientError(
-                "`GOOGLE_SERVICE_ACCOUNT_JSON` contém JSON inválido. "
-                "Cole o JSON inteiro da service account dentro de três aspas simples."
-            ) from exc
-
-    info = _secret("GOOGLE_SERVICE_ACCOUNT")
-    if not info:
-        raise SheetsClientError(
-            "Configure `GOOGLE_SERVICE_ACCOUNT_JSON` em `st.secrets`. "
-            "O formato antigo `GOOGLE_SERVICE_ACCOUNT` ainda é aceito."
-        )
-    return dict(info)
-
-
 def conectar_planilha() -> gspread.Spreadsheet:
     sheet_id = _secret("GOOGLE_SHEET_ID")
     if not sheet_id:
-        raise SheetsClientError("Configure `GOOGLE_SHEET_ID` em `st.secrets`.")
+        raise SheetsClientError(
+            "GOOGLE_SHEET_ID não configurado. No Streamlit, cadastre em Secrets. "
+            "No GitHub Actions, cadastre em Settings > Secrets and variables > Actions."
+        )
 
     try:
         credentials = Credentials.from_service_account_info(
@@ -134,6 +178,8 @@ def conectar_planilha() -> gspread.Spreadsheet:
         )
         client = gspread.authorize(credentials)
         return client.open_by_key(sheet_id)
+    except SheetsClientError:
+        raise
     except Exception as exc:
         raise SheetsClientError(f"Erro ao conectar ao Google Sheets: {exc}") from exc
 
