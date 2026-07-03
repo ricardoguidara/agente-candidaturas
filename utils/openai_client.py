@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 
 import streamlit as st
 from openai import OpenAI
@@ -11,14 +12,14 @@ class OpenAIClientError(RuntimeError):
 
 
 def _client() -> OpenAI:
-    api_key = st.secrets.get("OPENAI_API_KEY")
+    api_key = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY")
     if not api_key:
         raise OpenAIClientError("Configure `OPENAI_API_KEY` em `st.secrets`.")
     return OpenAI(api_key=api_key)
 
 
 def _model() -> str:
-    return st.secrets.get("OPENAI_MODEL", "gpt-4o-mini")
+    return os.getenv("OPENAI_MODEL") or st.secrets.get("OPENAI_MODEL", "gpt-4o-mini")
 
 
 def gerar_texto(system_prompt: str, user_prompt: str) -> str:

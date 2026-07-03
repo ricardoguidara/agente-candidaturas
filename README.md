@@ -92,12 +92,62 @@ Depois, no Radar, clique em `Processar links pendentes`. O app tenta extrair os 
 
 Links LinkedIn e Gupy são aceitos para entrada manual. O app só tenta ler metadados ou conteúdo público. Ele não usa login, navegador, cookies, captcha, automação ou scraping agressivo. Se a descrição completa não estiver pública, a vaga deve ser complementada manualmente.
 
+### Radar automático com GitHub Actions
+
+O Radar também pode rodar automaticamente fora do Streamlit pelo script:
+
+```bash
+python scripts/radar_runner.py
+```
+
+O workflow `.github/workflows/radar.yml` permite rodar manualmente em **GitHub > Actions > Radar de Vagas > Run workflow** e também executa diariamente às `11:30 UTC`.
+
+O runner automático:
+
+- lê `Radar_Config`;
+- busca Adzuna quando `ADZUNA_APP_ID` e `ADZUNA_APP_KEY` existem;
+- lê `Empresas_Alvo`;
+- busca Greenhouse e Lever públicos quando `plataforma` for `Greenhouse` ou `Lever`;
+- filtra vagas por score preliminar, com padrão `RADAR_SCORE_MIN = 65`;
+- remove duplicatas por `Link` ou `Empresa + Cargo`;
+- insere novas vagas em `Vagas_CRM` com `Status = Avaliar`;
+- registra logs simples no console da Action.
+
+Secrets necessários no GitHub Actions:
+
+```text
+GOOGLE_SHEET_ID
+GOOGLE_SERVICE_ACCOUNT_JSON
+```
+
+Secrets opcionais:
+
+```text
+ADZUNA_APP_ID
+ADZUNA_APP_KEY
+OPENAI_API_KEY
+OPENAI_MODEL
+```
+
+Variáveis opcionais:
+
+```text
+RADAR_SCORE_MIN=65
+RADAR_ADZUNA_COUNTRY=br
+RADAR_RESULTS_PER_QUERY=20
+```
+
+O runner não usa `st.secrets`; ele lê credenciais por variáveis de ambiente. O Streamlit continua usando os mesmos helpers com fallback para `st.secrets`.
+
 ## Estrutura
 
 ```text
 app.py
 requirements.txt
 .streamlit/secrets.toml.example
+.github/workflows/radar.yml
+scripts/
+  radar_runner.py
 prompts/
   perfil_base_ricardo.md
   prompt_avaliacao.md

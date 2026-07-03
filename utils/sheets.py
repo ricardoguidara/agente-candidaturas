@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 
 import gspread
@@ -72,6 +73,29 @@ class SheetsClientError(RuntimeError):
     """Erro de configuração ou comunicação com Google Sheets."""
 
 
+def _secret(nome: str, default: Any = None) -> Any:
+    if os.getenv(nome):
+        return os.getenv(nome)
+    try:
+        return st.secrets.get(nome, default)
+    except Exception:
+        return default
+
+
+def _info(mensagem: str) -> None:
+    try:
+        st.info(mensagem)
+    except Exception:
+        print(f"INFO: {mensagem}")
+
+
+def _warning(mensagem: str) -> None:
+    try:
+        st.warning(mensagem)
+    except Exception:
+        print(f"AVISO: {mensagem}")
+
+
 def ensure_row_length(row: list[Any], target_length: int) -> list[Any]:
     if len(row) < target_length:
         row.extend([""] * (target_length - len(row)))
@@ -79,7 +103,7 @@ def ensure_row_length(row: list[Any], target_length: int) -> list[Any]:
 
 
 def _service_account_info() -> dict:
-    json_text = st.secrets.get("GOOGLE_SERVICE_ACCOUNT_JSON")
+    json_text = _secret("GOOGLE_SERVICE_ACCOUNT_JSON")
     if json_text:
         try:
             return json.loads(json_text)
@@ -89,7 +113,7 @@ def _service_account_info() -> dict:
                 "Cole o JSON inteiro da service account dentro de três aspas simples."
             ) from exc
 
-    info = st.secrets.get("GOOGLE_SERVICE_ACCOUNT")
+    info = _secret("GOOGLE_SERVICE_ACCOUNT")
     if not info:
         raise SheetsClientError(
             "Configure `GOOGLE_SERVICE_ACCOUNT_JSON` em `st.secrets`. "
@@ -99,7 +123,7 @@ def _service_account_info() -> dict:
 
 
 def conectar_planilha() -> gspread.Spreadsheet:
-    sheet_id = st.secrets.get("GOOGLE_SHEET_ID")
+    sheet_id = _secret("GOOGLE_SHEET_ID")
     if not sheet_id:
         raise SheetsClientError("Configure `GOOGLE_SHEET_ID` em `st.secrets`.")
 
@@ -132,7 +156,7 @@ def _obter_ou_criar_worksheet(
         ws = planilha.worksheet(nome)
     except gspread.WorksheetNotFound:
         ws = planilha.add_worksheet(title=nome, rows=rows, cols=max(cols, len(headers)))
-        st.info(f"Aba `{nome}` criada automaticamente.")
+        _info(f"Aba `{nome}` criada automaticamente.")
     _garantir_colunas(ws, headers)
     return ws
 
@@ -165,6 +189,16 @@ def garantir_abas_radar(planilha: gspread.Spreadsheet) -> None:
     _obter_ou_criar_worksheet(planilha, RADAR_RESULTADOS_WORKSHEET, RADAR_RESULTADOS_HEADERS)
 
 
+def ler_radar_config(planilha: gspread.Spreadsheet) -> list[dict[str, Any]]:
+    ws = _obter_ou_criar_worksheet(planilha, RADAR_CONFIG_WORKSHEET, RADAR_CONFIG_HEADERS)
+    configs = []
+    for registro in ws.get_all_records():
+        ativo = str(registro.get("ativo", "")).strip().lower()
+        if ativo in {"sim", "true", "1", "ativo", "yes"}:
+            configs.append(registro)
+    return configs
+
+
 def ler_empresas_alvo(planilha: gspread.Spreadsheet) -> list[dict[str, Any]]:
     ws = _obter_ou_criar_worksheet(planilha, EMPRESAS_ALVO_WORKSHEET, EMPRESAS_ALVO_HEADERS)
     empresas = []
@@ -190,7 +224,7 @@ def _garantir_colunas(ws: gspread.Worksheet, colunas: list[str]) -> dict[str, in
     if alterou:
         try:
             ws.update("1:1", [header])
-            st.info(f"Cabeçalhos atualizados na aba `{ws.title}`.")
+            _info(f"Cabeçalhos atualizados na aba `{ws.title}`.")
         except Exception as exc:
             raise SheetsClientError(
                 f"Não foi possível criar cabeçalhos na aba `{ws.title}`: {exc}"
@@ -204,7 +238,7 @@ def _append_dict_row(ws: gspread.Worksheet, colunas: dict[str, int], dados: dict
     for chave, valor in dados.items():
         coluna = colunas.get(chave)
         if not coluna:
-            st.warning(f"Coluna `{chave}` não encontrada na aba `{ws.title}`.")
+            _warning(f"Coluna `{chave}` não encontrada na aba `{ws.title}`.")
             continue
         linha = ensure_row_length(linha, coluna)
         linha[coluna - 1] = valor
@@ -293,7 +327,7 @@ def atualizar_link_pendente(
         for chave, valor in dados.items():
             coluna = colunas.get(chave)
             if not coluna:
-                st.warning(f"Coluna `{chave}` não encontrada na aba `{VAGAS_WORKSHEET}`.")
+                _warning(f"Coluna `{chave}` não encontrada na aba `{VAGAS_WORKSHEET}`.")
                 continue
             atual = ensure_row_length(atual, coluna)
             if str(atual[coluna - 1]).strip():
@@ -349,7 +383,7 @@ def atualizar_vaga(planilha: gspread.Spreadsheet, row_number: int, analise: dict
         for nome, valor in valores.items():
             coluna = colunas.get(nome)
             if not coluna:
-                st.warning(f"Coluna `{nome}` não encontrada na aba `{VAGAS_WORKSHEET}`.")
+                _warning(f"Coluna `{nome}` não encontrada na aba `{VAGAS_WORKSHEET}`.")
                 continue
             updates.append(
                 {
@@ -374,7 +408,7 @@ def registrar_output(planilha: gspread.Spreadsheet, dados: dict[str, Any]) -> No
             ws = planilha.worksheet(OUTPUTS_WORKSHEET)
         except gspread.WorksheetNotFound:
             ws = planilha.add_worksheet(title=OUTPUTS_WORKSHEET, rows=1000, cols=20)
-            st.info(f"Aba `{OUTPUTS_WORKSHEET}` criada automaticamente.")
+            _info(f"Aba `{OUTPUTS_WORKSHEET}` criada automaticamente.")
 
         colunas = _garantir_colunas(ws, list(dados.keys()))
         _append_dict_row(ws, colunas, dados)
