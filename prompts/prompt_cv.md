@@ -29,9 +29,11 @@ Regras rígidas de limpeza:
 Regras de idioma:
 - Para vagas brasileiras, gerar CV em português.
 - Para vagas internacionais ou descrição em inglês, gerar CV em inglês.
+- Em inglês, usar apenas "Fluent English". Não escrever "near-native English", "native-like English" ou claims equivalentes.
 
 Regras de adaptação por tipo de vaga:
-- Para Creative Leader / Creative Director: priorizar liderança criativa, marca, storytelling, campanhas, conteúdo, clientes, qualidade criativa e gestão de equipes.
+- Evite frases genéricas ou operacionais como "campanhas impactantes", "mídias sociais como canal de marca" ou "identidade de marca" quando não estiverem conectadas a escopo estratégico real.
+- Para Creative Leader / Creative Director: priorizar linguagem estratégica como "Creative direction for brand storytelling, campaigns and content platforms", "Brand expression and narrative systems", "Customer-facing creative leadership", "Multidisciplinary team direction", "Concept development and creative quality control" e "Scalable creative production". Em português, adaptar como direção criativa para storytelling de marca, campanhas e plataformas de conteúdo; sistemas narrativos e expressão de marca; liderança criativa voltada ao público; direção de equipes multidisciplinares; desenvolvimento conceitual e controle de qualidade criativa; produção criativa escalável.
 - Para AI Creative Director: priorizar IA generativa, creative operations, escala, automação criativa, workflows e liderança.
 - Para Gerente de Marketing/Conteúdo: priorizar estratégia, conteúdo, marca, stakeholders, canais e resultados.
 - Para Coordenador/Gerente audiovisual: priorizar produção, operação, qualidade, cronograma, fornecedores e entrega.
