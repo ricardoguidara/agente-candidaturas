@@ -148,6 +148,17 @@ def ler_vagas_avaliar(planilha: gspread.Spreadsheet) -> list[dict[str, Any]]:
     return vagas
 
 
+def ler_links_pendentes(planilha: gspread.Spreadsheet) -> list[dict[str, Any]]:
+    ws = _obter_ou_criar_worksheet(planilha, VAGAS_WORKSHEET, VAGAS_CRM_RADAR_HEADERS)
+    registros = ws.get_all_records()
+    pendentes = []
+    for index, registro in enumerate(registros, start=2):
+        if str(registro.get("Status", "")).strip().lower() == "link pendente":
+            registro["_row_number"] = index
+            pendentes.append(registro)
+    return pendentes
+
+
 def garantir_abas_radar(planilha: gspread.Spreadsheet) -> None:
     _obter_ou_criar_worksheet(planilha, RADAR_CONFIG_WORKSHEET, RADAR_CONFIG_HEADERS)
     _obter_ou_criar_worksheet(planilha, EMPRESAS_ALVO_WORKSHEET, EMPRESAS_ALVO_HEADERS)
@@ -265,6 +276,48 @@ def enviar_para_vagas_crm(planilha: gspread.Spreadsheet, vagas: list[dict[str, A
         raise SheetsClientError(
             "Não foi possível enviar vagas para `Vagas_CRM`. "
             "Confira os cabeçalhos e permissões da planilha."
+        ) from exc
+
+
+def atualizar_link_pendente(
+    planilha: gspread.Spreadsheet,
+    row_number: int,
+    dados: dict[str, Any],
+    status: str,
+) -> None:
+    try:
+        ws = _obter_ou_criar_worksheet(planilha, VAGAS_WORKSHEET, VAGAS_CRM_RADAR_HEADERS)
+        colunas = _garantir_colunas(ws, VAGAS_CRM_RADAR_HEADERS)
+        atual = ws.row_values(row_number)
+        updates = []
+        for chave, valor in dados.items():
+            coluna = colunas.get(chave)
+            if not coluna:
+                st.warning(f"Coluna `{chave}` não encontrada na aba `{VAGAS_WORKSHEET}`.")
+                continue
+            atual = ensure_row_length(atual, coluna)
+            if str(atual[coluna - 1]).strip():
+                continue
+            updates.append(
+                {
+                    "range": gspread.utils.rowcol_to_a1(row_number, coluna),
+                    "values": [[valor]],
+                }
+            )
+
+        coluna_status = colunas.get("Status")
+        if coluna_status:
+            updates.append(
+                {
+                    "range": gspread.utils.rowcol_to_a1(row_number, coluna_status),
+                    "values": [[status]],
+                }
+            )
+        if updates:
+            ws.batch_update(updates, value_input_option="USER_ENTERED")
+    except Exception as exc:
+        raise SheetsClientError(
+            "Não foi possível processar o link pendente na aba `Vagas_CRM`."
         ) from exc
 
 

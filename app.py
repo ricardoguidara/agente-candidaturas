@@ -15,6 +15,7 @@ from utils.job_radar import (
     normalizar_para_radar,
     radar_para_vagas_crm,
 )
+from utils.job_link_extractor import extrair_dados_link, prompt_estruturacao_link
 from utils.openai_client import OpenAIClientError, gerar_json, gerar_texto
 from utils.pdf_generator import gerar_cv_pdf
 from utils.scoring import normalizar_analise
@@ -24,7 +25,9 @@ from utils.sheets import (
     conectar_planilha,
     enviar_para_vagas_crm,
     garantir_abas_radar,
+    atualizar_link_pendente,
     ler_empresas_alvo,
+    ler_links_pendentes,
     ler_radar_resultados,
     ler_vagas_avaliar,
     registrar_output,
@@ -148,6 +151,7 @@ def inicializar_estado() -> None:
         "pacote": None,
         "pdf_bytes": None,
         "radar_resultados": [],
+        "link_preview": None,
     }
     for chave, valor in defaults.items():
         st.session_state.setdefault(chave, valor)
@@ -193,6 +197,38 @@ def gerar_pacote(vaga: dict, analise: dict) -> dict:
     }
 
 
+def estruturar_link_com_openai(url: str, plataforma: str):
+    def _estruturar(texto: str) -> dict:
+        return gerar_json(
+            system_prompt="Você extrai dados de vagas a partir de texto público. Responda apenas JSON válido e nunca invente dados.",
+            user_prompt=prompt_estruturacao_link(url, plataforma, texto),
+        )
+
+    return _estruturar
+
+
+def preview_para_crm(preview: dict) -> dict:
+    crm = radar_para_vagas_crm(
+        {
+            "data_busca": preview.get("data_busca", datetime.now().date().isoformat()),
+            "fonte": "Link manual",
+            "empresa": preview.get("empresa", ""),
+            "cargo": preview.get("cargo", ""),
+            "link": preview.get("link", ""),
+            "local": preview.get("local", ""),
+            "modelo": preview.get("modelo", ""),
+            "regime": preview.get("regime", ""),
+            "senioridade": preview.get("senioridade", ""),
+            "area_principal": preview.get("area_principal", ""),
+            "descricao": preview.get("descricao_vaga", ""),
+            "observacoes": preview.get("observacoes_extracao", ""),
+            "motivo": preview.get("motivo", ""),
+        }
+    )
+    crm["Plataforma"] = preview.get("plataforma", "") or inferir_plataforma(preview.get("link", ""))
+    return crm
+
+
 def sidebar_config() -> None:
     st.sidebar.title("agente-candidaturas")
     st.sidebar.caption("Agentes de radar e candidatura")
@@ -228,6 +264,107 @@ def render_radar() -> None:
                 st.error(str(exc))
     with col_info:
         st.info("Gupy e LinkedIn são aceitos como links manuais. Busca automática nesta versão: Adzuna, Greenhouse e Lever públicos.")
+
+    st.markdown("### Inserir vaga por link")
+    url_vaga = st.text_input("URL da vaga", key="radar_url_vaga")
+    c_link1, c_link2 = st.columns(2)
+    with c_link1:
+        if st.button("Extrair dados da vaga", use_container_width=True):
+            if not url_vaga:
+                st.warning("Cole uma URL de vaga antes de extrair.")
+            else:
+                try:
+                    plataforma = inferir_plataforma(url_vaga)
+                    preview = extrair_dados_link(
+                        url_vaga,
+                        estruturador=estruturar_link_com_openai(url_vaga, plataforma),
+                    )
+                    st.session_state.link_preview = preview
+                    if preview.get("status_extracao") == "precisa_descricao":
+                        st.warning("Não foi possível extrair descrição suficiente. Revise e cole a descrição manualmente antes de enviar.")
+                    else:
+                        st.success("Dados extraídos. Revise a prévia antes de enviar.")
+                except OpenAIClientError as exc:
+                    st.error(str(exc))
+                except Exception as exc:
+                    st.error(f"Não foi possível extrair a vaga: {exc}")
+
+    preview = st.session_state.link_preview
+    if preview:
+        st.markdown("#### Prévia editável")
+        p1, p2, p3 = st.columns(3)
+        preview["empresa"] = p1.text_input("Empresa", value=preview.get("empresa", ""), key="preview_empresa")
+        preview["cargo"] = p2.text_input("Cargo", value=preview.get("cargo", ""), key="preview_cargo")
+        preview["plataforma"] = p3.text_input("Plataforma", value=preview.get("plataforma", ""), key="preview_plataforma")
+        p4, p5, p6, p7 = st.columns(4)
+        preview["local"] = p4.text_input("Local", value=preview.get("local", ""), key="preview_local")
+        preview["modelo"] = p5.selectbox(
+            "Modelo",
+            ["Remoto", "Híbrido", "Presencial", "Não informado"],
+            index=["Remoto", "Híbrido", "Presencial", "Não informado"].index(preview.get("modelo", "Não informado")) if preview.get("modelo", "Não informado") in ["Remoto", "Híbrido", "Presencial", "Não informado"] else 3,
+            key="preview_modelo",
+        )
+        preview["regime"] = p6.selectbox(
+            "Regime",
+            ["CLT", "PJ", "Freelancer", "Temporário", "Não informado"],
+            index=["CLT", "PJ", "Freelancer", "Temporário", "Não informado"].index(preview.get("regime", "Não informado")) if preview.get("regime", "Não informado") in ["CLT", "PJ", "Freelancer", "Temporário", "Não informado"] else 4,
+            key="preview_regime",
+        )
+        preview["senioridade"] = p7.selectbox(
+            "Senioridade",
+            ["Coordenador", "Gerente", "Head", "Diretor", "Lead", "Sênior", "Não informado"],
+            index=["Coordenador", "Gerente", "Head", "Diretor", "Lead", "Sênior", "Não informado"].index(preview.get("senioridade", "Não informado")) if preview.get("senioridade", "Não informado") in ["Coordenador", "Gerente", "Head", "Diretor", "Lead", "Sênior", "Não informado"] else 6,
+            key="preview_senioridade",
+        )
+        preview["area_principal"] = st.selectbox(
+            "Área principal",
+            ["Criação", "Marketing", "Conteúdo", "Comunicação", "Audiovisual", "IA", "Creative Operations", "Não informado"],
+            index=["Criação", "Marketing", "Conteúdo", "Comunicação", "Audiovisual", "IA", "Creative Operations", "Não informado"].index(preview.get("area_principal", "Não informado")) if preview.get("area_principal", "Não informado") in ["Criação", "Marketing", "Conteúdo", "Comunicação", "Audiovisual", "IA", "Creative Operations", "Não informado"] else 7,
+            key="preview_area",
+        )
+        preview["descricao_vaga"] = st.text_area("Descrição da vaga", value=preview.get("descricao_vaga", ""), height=220, key="preview_descricao")
+        preview["observacoes_extracao"] = st.text_area("Observações", value=preview.get("observacoes_extracao", ""), height=90, key="preview_observacoes")
+        st.metric("Score preliminar", preview.get("score_preliminar", 0))
+        if preview.get("red_flags"):
+            st.warning(preview["red_flags"])
+        st.caption(f"Status da extração: {preview.get('status_extracao', '')}")
+
+        with c_link2:
+            if st.button("Enviar para Vagas_CRM", type="primary", use_container_width=True):
+                crm_vaga = preview_para_crm(preview)
+                try:
+                    inseridas, avisos = enviar_para_vagas_crm(planilha, [crm_vaga])
+                    if inseridas:
+                        st.success("Vaga enviada para Vagas_CRM com status Avaliar.")
+                    for aviso in avisos:
+                        st.warning(aviso)
+                except SheetsClientError as exc:
+                    st.error(str(exc))
+
+    st.markdown("### Processar links pendentes")
+    if st.button("Processar links pendentes", use_container_width=True):
+        try:
+            pendentes = ler_links_pendentes(planilha)
+            processadas = 0
+            for item in pendentes:
+                link_pendente = item.get("Link", "")
+                if not link_pendente:
+                    atualizar_link_pendente(planilha, item["_row_number"], {}, "Precisa descrição")
+                    continue
+                plataforma = inferir_plataforma(link_pendente)
+                extraido = extrair_dados_link(
+                    link_pendente,
+                    estruturador=estruturar_link_com_openai(link_pendente, plataforma),
+                )
+                crm = preview_para_crm(extraido)
+                status = "Avaliar" if extraido.get("status_extracao") in {"sucesso", "parcial"} else "Precisa descrição"
+                atualizar_link_pendente(planilha, item["_row_number"], crm, status)
+                processadas += 1
+            st.success(f"{processadas} link(s) pendente(s) processado(s).")
+        except (SheetsClientError, OpenAIClientError) as exc:
+            st.error(str(exc))
+        except Exception as exc:
+            st.error(f"Não foi possível processar links pendentes: {exc}")
 
     st.markdown("### Entrada manual assistida")
     with st.form("radar_manual_form"):

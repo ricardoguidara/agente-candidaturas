@@ -47,6 +47,7 @@ Radar_Resultados
 
 Fontes suportadas na v0.1:
 
+- Inserir vaga por link, com tentativa de extração pública de HTML, metadados, OpenGraph e JSON-LD `JobPosting`.
 - Entrada manual assistida, incluindo links Gupy.
 - Adzuna API, opcional via secrets.
 - Greenhouse público via job board API.
@@ -69,6 +70,28 @@ ADZUNA_APP_KEY = "sua-adzuna-app-key"
 
 Se as chaves não estiverem configuradas, o app mostra o aviso: `Adzuna não configurado. Use entrada manual ou configure as chaves.`
 
+### Inserir vaga por link
+
+No app, abra `Radar de Vagas Estratégicas`, cole a URL no campo `URL da vaga` e clique em `Extrair dados da vaga`.
+
+O sistema tenta identificar a plataforma pelo domínio, incluindo LinkedIn, Gupy, Greenhouse, Lever, Workable, Indeed, site próprio ou outro. Em seguida, tenta ler apenas conteúdo público da página, sem login, navegador, cookies, captcha ou sessão do usuário.
+
+Quando houver texto suficiente, a OpenAI estrutura os campos da vaga. Quando a página bloquear leitura ou a descrição não estiver acessível, o app retorna `precisa_descricao` e pede revisão manual. O sistema nunca inventa descrição de vaga quando o conteúdo não puder ser extraído.
+
+Antes de enviar para `Vagas_CRM`, revise a prévia editável com empresa, cargo, plataforma, local, modelo, regime, senioridade, área principal, descrição da vaga, score preliminar, red flags e observações.
+
+Ao enviar, a vaga entra em `Vagas_CRM` com `Status = Avaliar`.
+
+### Links pendentes
+
+Também é possível cadastrar previamente uma linha na aba `Vagas_CRM` com `Link` e `Status = Link pendente`.
+
+Depois, no Radar, clique em `Processar links pendentes`. O app tenta extrair os dados do link, preenche apenas campos vazios e preserva qualquer campo já preenchido manualmente. Se a extração funcionar, o status muda para `Avaliar`. Se não houver descrição suficiente, o status muda para `Precisa descrição`.
+
+### Limitações LinkedIn/Gupy
+
+Links LinkedIn e Gupy são aceitos para entrada manual. O app só tenta ler metadados ou conteúdo público. Ele não usa login, navegador, cookies, captcha, automação ou scraping agressivo. Se a descrição completa não estiver pública, a vaga deve ser complementada manualmente.
+
 ## Estrutura
 
 ```text
@@ -88,6 +111,7 @@ utils/
   pdf_generator.py
   scoring.py
   job_radar.py
+  job_link_extractor.py
 outputs/.gitkeep
 ```
 
