@@ -10,7 +10,62 @@ from google.oauth2.service_account import Credentials
 
 VAGAS_WORKSHEET = "Vagas_CRM"
 OUTPUTS_WORKSHEET = "Outputs"
+RADAR_CONFIG_WORKSHEET = "Radar_Config"
+EMPRESAS_ALVO_WORKSHEET = "Empresas_Alvo"
+RADAR_RESULTADOS_WORKSHEET = "Radar_Resultados"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+
+RADAR_CONFIG_HEADERS = [
+    "termo_busca",
+    "local",
+    "idioma",
+    "modelo",
+    "prioridade",
+    "ativo",
+    "observacao",
+]
+EMPRESAS_ALVO_HEADERS = [
+    "empresa",
+    "prioridade",
+    "plataforma",
+    "site_carreiras",
+    "observacao",
+    "ativo",
+]
+RADAR_RESULTADOS_HEADERS = [
+    "data_busca",
+    "fonte",
+    "empresa",
+    "cargo",
+    "link",
+    "local",
+    "modelo",
+    "regime",
+    "senioridade",
+    "area_principal",
+    "descricao_resumida",
+    "score_preliminar",
+    "motivo",
+    "red_flags",
+    "status_radar",
+]
+VAGAS_CRM_RADAR_HEADERS = [
+    "ID",
+    "Data encontrada",
+    "Fonte",
+    "Plataforma",
+    "Empresa",
+    "Cargo",
+    "Link",
+    "Local",
+    "Modelo",
+    "Regime",
+    "Senioridade",
+    "Área principal",
+    "Status",
+    "Descrição da vaga",
+    "Observações",
+]
 
 
 class SheetsClientError(RuntimeError):
@@ -66,6 +121,22 @@ def _worksheet(planilha: gspread.Spreadsheet, nome: str) -> gspread.Worksheet:
         raise SheetsClientError(f"A aba `{nome}` não existe na planilha.") from exc
 
 
+def _obter_ou_criar_worksheet(
+    planilha: gspread.Spreadsheet,
+    nome: str,
+    headers: list[str],
+    rows: int = 1000,
+    cols: int = 30,
+) -> gspread.Worksheet:
+    try:
+        ws = planilha.worksheet(nome)
+    except gspread.WorksheetNotFound:
+        ws = planilha.add_worksheet(title=nome, rows=rows, cols=max(cols, len(headers)))
+        st.info(f"Aba `{nome}` criada automaticamente.")
+    _garantir_colunas(ws, headers)
+    return ws
+
+
 def ler_vagas_avaliar(planilha: gspread.Spreadsheet) -> list[dict[str, Any]]:
     ws = _worksheet(planilha, VAGAS_WORKSHEET)
     registros = ws.get_all_records()
@@ -75,6 +146,27 @@ def ler_vagas_avaliar(planilha: gspread.Spreadsheet) -> list[dict[str, Any]]:
             registro["_row_number"] = index
             vagas.append(registro)
     return vagas
+
+
+def garantir_abas_radar(planilha: gspread.Spreadsheet) -> None:
+    _obter_ou_criar_worksheet(planilha, RADAR_CONFIG_WORKSHEET, RADAR_CONFIG_HEADERS)
+    _obter_ou_criar_worksheet(planilha, EMPRESAS_ALVO_WORKSHEET, EMPRESAS_ALVO_HEADERS)
+    _obter_ou_criar_worksheet(planilha, RADAR_RESULTADOS_WORKSHEET, RADAR_RESULTADOS_HEADERS)
+
+
+def ler_empresas_alvo(planilha: gspread.Spreadsheet) -> list[dict[str, Any]]:
+    ws = _obter_ou_criar_worksheet(planilha, EMPRESAS_ALVO_WORKSHEET, EMPRESAS_ALVO_HEADERS)
+    empresas = []
+    for registro in ws.get_all_records():
+        ativo = str(registro.get("ativo", "")).strip().lower()
+        if ativo in {"sim", "true", "1", "ativo", "yes"}:
+            empresas.append(registro)
+    return empresas
+
+
+def ler_radar_resultados(planilha: gspread.Spreadsheet) -> list[dict[str, Any]]:
+    ws = _obter_ou_criar_worksheet(planilha, RADAR_RESULTADOS_WORKSHEET, RADAR_RESULTADOS_HEADERS)
+    return ws.get_all_records()
 
 
 def _garantir_colunas(ws: gspread.Worksheet, colunas: list[str]) -> dict[str, int]:
@@ -93,6 +185,87 @@ def _garantir_colunas(ws: gspread.Worksheet, colunas: list[str]) -> dict[str, in
                 f"Não foi possível criar cabeçalhos na aba `{ws.title}`: {exc}"
             ) from exc
     return {nome: index for index, nome in enumerate(header, start=1) if nome}
+
+
+def _append_dict_row(ws: gspread.Worksheet, colunas: dict[str, int], dados: dict[str, Any]) -> None:
+    target_length = max(colunas.values(), default=len(colunas))
+    linha = ensure_row_length([], target_length)
+    for chave, valor in dados.items():
+        coluna = colunas.get(chave)
+        if not coluna:
+            st.warning(f"Coluna `{chave}` não encontrada na aba `{ws.title}`.")
+            continue
+        linha = ensure_row_length(linha, coluna)
+        linha[coluna - 1] = valor
+    ws.append_row(linha, value_input_option="USER_ENTERED")
+
+
+def registrar_radar_resultados(planilha: gspread.Spreadsheet, vagas: list[dict[str, Any]]) -> int:
+    if not vagas:
+        return 0
+    try:
+        ws = _obter_ou_criar_worksheet(
+            planilha,
+            RADAR_RESULTADOS_WORKSHEET,
+            RADAR_RESULTADOS_HEADERS,
+        )
+        colunas = _garantir_colunas(ws, RADAR_RESULTADOS_HEADERS)
+        for vaga in vagas:
+            _append_dict_row(ws, colunas, vaga)
+        return len(vagas)
+    except Exception as exc:
+        raise SheetsClientError(
+            "Não foi possível registrar resultados do Radar na planilha."
+        ) from exc
+
+
+def _normalizar_texto(valor: Any) -> str:
+    return str(valor or "").strip().lower()
+
+
+def _vaga_duplicada(existentes: list[dict[str, Any]], vaga: dict[str, Any]) -> bool:
+    link = _normalizar_texto(vaga.get("Link"))
+    empresa = _normalizar_texto(vaga.get("Empresa"))
+    cargo = _normalizar_texto(vaga.get("Cargo"))
+    for existente in existentes:
+        link_existente = _normalizar_texto(existente.get("Link"))
+        empresa_existente = _normalizar_texto(existente.get("Empresa"))
+        cargo_existente = _normalizar_texto(existente.get("Cargo"))
+        if link and link == link_existente:
+            return True
+        if empresa and cargo and empresa == empresa_existente and cargo == cargo_existente:
+            return True
+    return False
+
+
+def enviar_para_vagas_crm(planilha: gspread.Spreadsheet, vagas: list[dict[str, Any]]) -> tuple[int, list[str]]:
+    if not vagas:
+        return 0, []
+    try:
+        ws = _obter_ou_criar_worksheet(
+            planilha,
+            VAGAS_WORKSHEET,
+            VAGAS_CRM_RADAR_HEADERS,
+        )
+        colunas = _garantir_colunas(ws, VAGAS_CRM_RADAR_HEADERS)
+        existentes = ws.get_all_records()
+        avisos = []
+        inseridas = 0
+        for vaga in vagas:
+            if _vaga_duplicada(existentes, vaga):
+                avisos.append(
+                    f"Duplicada ignorada: {vaga.get('Empresa', '')} | {vaga.get('Cargo', '')}"
+                )
+                continue
+            _append_dict_row(ws, colunas, vaga)
+            existentes.append(vaga)
+            inseridas += 1
+        return inseridas, avisos
+    except Exception as exc:
+        raise SheetsClientError(
+            "Não foi possível enviar vagas para `Vagas_CRM`. "
+            "Confira os cabeçalhos e permissões da planilha."
+        ) from exc
 
 
 def atualizar_vaga(planilha: gspread.Spreadsheet, row_number: int, analise: dict) -> None:
@@ -151,18 +324,7 @@ def registrar_output(planilha: gspread.Spreadsheet, dados: dict[str, Any]) -> No
             st.info(f"Aba `{OUTPUTS_WORKSHEET}` criada automaticamente.")
 
         colunas = _garantir_colunas(ws, list(dados.keys()))
-        target_length = max(colunas.values(), default=len(colunas))
-        linha = ensure_row_length([], target_length)
-
-        for chave, valor in dados.items():
-            coluna = colunas.get(chave)
-            if not coluna:
-                st.warning(f"Coluna `{chave}` não encontrada na aba `{OUTPUTS_WORKSHEET}`.")
-                continue
-            linha = ensure_row_length(linha, coluna)
-            linha[coluna - 1] = valor
-
-        ws.append_row(linha, value_input_option="USER_ENTERED")
+        _append_dict_row(ws, colunas, dados)
     except SheetsClientError:
         raise
     except Exception as exc:

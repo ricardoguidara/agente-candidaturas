@@ -1,12 +1,16 @@
 # agente-candidaturas
 
-MVP em Python/Streamlit para avaliar vagas em uma planilha Google Sheets e gerar um pacote de candidatura para Ricardo Guidara.
+MVP em Python/Streamlit para encontrar oportunidades estratégicas, avaliar vagas em uma planilha Google Sheets e gerar um pacote de candidatura para Ricardo Guidara.
 
-Esta versão implementa apenas o **Agente 2: Candidatura de Alta Aderência**. Ela não faz scraping de LinkedIn, não busca vagas automaticamente e não realiza candidatura automática.
+Esta versão implementa o **Agente 1: Radar de Vagas Estratégicas** e o **Agente 2: Candidatura de Alta Aderência**. Ela não faz scraping de LinkedIn logado, não burla termos de plataformas e não realiza candidatura automática.
 
 ## Funcionalidades
 
 - Conecta ao Google Sheets com credenciais em `st.secrets`.
+- Cria e usa abas de radar: `Radar_Config`, `Empresas_Alvo` e `Radar_Resultados`.
+- Permite entrada manual assistida de vagas para `Vagas_CRM`.
+- Busca vagas no Adzuna quando `ADZUNA_APP_ID` e `ADZUNA_APP_KEY` estão configurados.
+- Busca vagas públicas de empresas-alvo em Greenhouse e Lever quando a URL/slug está configurada.
 - Lê a aba `Vagas_CRM`.
 - Filtra vagas com `Status = Avaliar`.
 - Exibe vagas pendentes e detalhes da vaga selecionada.
@@ -29,6 +33,42 @@ Se o CV contiver placeholders ou dados inválidos, o PDF é bloqueado e a vaga n
 
 Os dados canônicos do perfil de Ricardo ficam em `prompts/perfil_base_ricardo.md`. Atualize esse arquivo quando houver mudanças reais de experiência, formação, idiomas, ferramentas, portfólio ou regras salariais.
 
+## Agente 1: Radar de Vagas Estratégicas
+
+O Radar alimenta a planilha com oportunidades para avaliação posterior pelo Agente 2.
+
+Abas criadas ou garantidas:
+
+```text
+Radar_Config
+Empresas_Alvo
+Radar_Resultados
+```
+
+Fontes suportadas na v0.1:
+
+- Entrada manual assistida, incluindo links Gupy.
+- Adzuna API, opcional via secrets.
+- Greenhouse público via job board API.
+- Lever público via postings API.
+
+Limitações:
+
+- Não faz scraping de LinkedIn logado.
+- Não faz scraping automático de Gupy nesta versão.
+- Não usa navegador, captcha ou login.
+- Não aplica automaticamente para vagas.
+- Não burla termos de uso de plataformas.
+
+Para habilitar Adzuna, adicione aos secrets:
+
+```toml
+ADZUNA_APP_ID = "seu-adzuna-app-id"
+ADZUNA_APP_KEY = "sua-adzuna-app-key"
+```
+
+Se as chaves não estiverem configuradas, o app mostra o aviso: `Adzuna não configurado. Use entrada manual ou configure as chaves.`
+
 ## Estrutura
 
 ```text
@@ -41,11 +81,13 @@ prompts/
   prompt_cv.md
   prompt_carta.md
   prompt_formulario.md
+  prompt_radar.md
 utils/
   sheets.py
   openai_client.py
   pdf_generator.py
   scoring.py
+  job_radar.py
 outputs/.gitkeep
 ```
 

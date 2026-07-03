@@ -7,6 +7,14 @@ from pathlib import Path
 
 import streamlit as st
 
+from utils.job_radar import (
+    buscar_adzuna,
+    buscar_greenhouse,
+    buscar_lever,
+    inferir_plataforma,
+    normalizar_para_radar,
+    radar_para_vagas_crm,
+)
 from utils.openai_client import OpenAIClientError, gerar_json, gerar_texto
 from utils.pdf_generator import gerar_cv_pdf
 from utils.scoring import normalizar_analise
@@ -14,8 +22,13 @@ from utils.sheets import (
     SheetsClientError,
     atualizar_vaga,
     conectar_planilha,
+    enviar_para_vagas_crm,
+    garantir_abas_radar,
+    ler_empresas_alvo,
+    ler_radar_resultados,
     ler_vagas_avaliar,
     registrar_output,
+    registrar_radar_resultados,
 )
 
 
@@ -134,6 +147,7 @@ def inicializar_estado() -> None:
         "analise": None,
         "pacote": None,
         "pdf_bytes": None,
+        "radar_resultados": [],
     }
     for chave, valor in defaults.items():
         st.session_state.setdefault(chave, valor)
@@ -181,7 +195,7 @@ def gerar_pacote(vaga: dict, analise: dict) -> dict:
 
 def sidebar_config() -> None:
     st.sidebar.title("agente-candidaturas")
-    st.sidebar.caption("Agente 2: candidatura de alta aderência")
+    st.sidebar.caption("Agentes de radar e candidatura")
 
     with st.sidebar.expander("Configuração esperada", expanded=False):
         st.markdown(
@@ -194,11 +208,153 @@ def sidebar_config() -> None:
         )
 
 
-def main() -> None:
-    inicializar_estado()
-    sidebar_config()
+def render_radar() -> None:
+    st.subheader("Radar de Vagas Estratégicas")
+    st.caption("Agente 1: organiza oportunidades relevantes sem scraping logado, candidatura automática ou burla de plataformas.")
 
-    st.title("agente-candidaturas")
+    try:
+        planilha = conectar_planilha()
+    except SheetsClientError as exc:
+        st.error(str(exc))
+        return
+
+    col_setup, col_info = st.columns([1, 2])
+    with col_setup:
+        if st.button("Garantir abas do Radar", use_container_width=True):
+            try:
+                garantir_abas_radar(planilha)
+                st.success("Abas do Radar prontas.")
+            except SheetsClientError as exc:
+                st.error(str(exc))
+    with col_info:
+        st.info("Gupy e LinkedIn são aceitos como links manuais. Busca automática nesta versão: Adzuna, Greenhouse e Lever públicos.")
+
+    st.markdown("### Entrada manual assistida")
+    with st.form("radar_manual_form"):
+        c1, c2 = st.columns(2)
+        empresa = c1.text_input("Empresa")
+        cargo = c2.text_input("Cargo")
+        link = st.text_input("Link da vaga")
+        c3, c4, c5 = st.columns(3)
+        local = c3.text_input("Local")
+        modelo = c4.selectbox("Modelo", ["", "Remoto", "Híbrido", "Presencial"])
+        regime = c5.selectbox("Regime", ["", "CLT", "PJ", "Freelance", "Internacional"])
+        c6, c7 = st.columns(2)
+        senioridade = c6.text_input("Senioridade")
+        area_principal = c7.text_input("Área principal")
+        descricao = st.text_area("Descrição da vaga", height=180)
+        observacoes = st.text_area("Observações", height=90)
+        salvar_manual = st.form_submit_button("Salvar em Vagas_CRM", type="primary")
+
+    if salvar_manual:
+        radar_vaga = normalizar_para_radar(
+            {
+                "empresa": empresa,
+                "cargo": cargo,
+                "link": link,
+                "local": local,
+                "modelo": modelo,
+                "regime": regime,
+                "senioridade": senioridade,
+                "area_principal": area_principal,
+                "descricao": descricao,
+                "observacoes": observacoes,
+            },
+            "Manual assistido",
+        )
+        crm_vaga = radar_para_vagas_crm({**radar_vaga, "descricao": descricao, "observacoes": observacoes})
+        crm_vaga["Plataforma"] = inferir_plataforma(link)
+        try:
+            inseridas, avisos = enviar_para_vagas_crm(planilha, [crm_vaga])
+            if inseridas:
+                st.success("Vaga enviada para Vagas_CRM com status Avaliar.")
+            for aviso in avisos:
+                st.warning(aviso)
+        except SheetsClientError as exc:
+            st.error(str(exc))
+
+    st.markdown("### Busca Adzuna")
+    adzuna_id = st.secrets.get("ADZUNA_APP_ID")
+    adzuna_key = st.secrets.get("ADZUNA_APP_KEY")
+    if not adzuna_id or not adzuna_key:
+        st.warning("Adzuna não configurado. Use entrada manual ou configure as chaves.")
+    else:
+        c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
+        termo = c1.text_input("Termo", value="Creative Director")
+        pais = c2.text_input("País", value="br")
+        local_adzuna = c3.text_input("Local Adzuna", value="")
+        qtd = c4.number_input("Quantidade", min_value=1, max_value=50, value=10)
+        if st.button("Buscar no Adzuna", use_container_width=True):
+            try:
+                resultados = buscar_adzuna(adzuna_id, adzuna_key, termo, pais, local_adzuna, int(qtd))
+                registrar_radar_resultados(planilha, resultados)
+                st.session_state.radar_resultados = resultados
+                st.success(f"{len(resultados)} resultados do Adzuna registrados.")
+            except Exception as exc:
+                st.error(f"Não foi possível buscar no Adzuna: {exc}")
+
+    st.markdown("### Greenhouse / Lever")
+    if st.button("Buscar empresas-alvo públicas", use_container_width=True):
+        resultados = []
+        avisos = []
+        try:
+            for empresa_cfg in ler_empresas_alvo(planilha):
+                plataforma = str(empresa_cfg.get("plataforma", "")).strip().lower()
+                empresa_nome = str(empresa_cfg.get("empresa", "")).strip()
+                site = str(empresa_cfg.get("site_carreiras", "")).strip()
+                try:
+                    if plataforma == "greenhouse":
+                        resultados.extend(buscar_greenhouse(site, empresa_nome))
+                    elif plataforma == "lever":
+                        resultados.extend(buscar_lever(site, empresa_nome))
+                    elif plataforma == "gupy":
+                        avisos.append(f"{empresa_nome}: Gupy automático não implementado nesta versão.")
+                    else:
+                        avisos.append(f"{empresa_nome}: plataforma não suportada para busca automática.")
+                except Exception as exc:
+                    avisos.append(f"{empresa_nome}: busca automática indisponível ({exc}).")
+            registrar_radar_resultados(planilha, resultados)
+            st.session_state.radar_resultados = resultados
+            st.success(f"{len(resultados)} resultados públicos registrados.")
+            for aviso in avisos:
+                st.warning(aviso)
+        except SheetsClientError as exc:
+            st.error(str(exc))
+
+    st.markdown("### Radar_Resultados")
+    if st.button("Carregar Radar_Resultados da planilha", use_container_width=True):
+        try:
+            st.session_state.radar_resultados = ler_radar_resultados(planilha)
+        except SheetsClientError as exc:
+            st.error(str(exc))
+
+    resultados = st.session_state.radar_resultados
+    if not resultados:
+        st.caption("Busque vagas ou use a entrada manual para popular resultados nesta sessão.")
+        return
+
+    linhas = [{"selecionar": False, **item} for item in resultados]
+    editado = st.data_editor(
+        linhas,
+        use_container_width=True,
+        hide_index=True,
+        key="radar_resultados_editor",
+    )
+    selecionadas = [linha for linha in editado if linha.get("selecionar")]
+    if st.button("Enviar selecionadas para Vagas_CRM", type="primary", use_container_width=True):
+        vagas_crm = [radar_para_vagas_crm(vaga) for vaga in selecionadas]
+        try:
+            inseridas, avisos = enviar_para_vagas_crm(planilha, vagas_crm)
+            st.success(f"{inseridas} vaga(s) enviada(s) para Vagas_CRM.")
+            for aviso in avisos:
+                st.warning(aviso)
+        except SheetsClientError as exc:
+            st.error(str(exc))
+
+
+def render_agente2() -> None:
+    st.subheader("Agente 2: Candidatura de Alta Aderência")
+
     st.caption("Leitura de vagas, análise de aderência e geração de pacote de candidatura.")
 
     col_carregar, col_status = st.columns([1, 2])
@@ -341,6 +497,22 @@ def main() -> None:
         with tabs[4]:
             for item in pacote["checklist_aplicacao"]:
                 st.checkbox(str(item), value=False)
+
+
+def main() -> None:
+    inicializar_estado()
+    sidebar_config()
+
+    st.title("agente-candidaturas")
+    st.caption("Radar de vagas, análise de aderência e geração de pacote de candidatura.")
+
+    tab_radar, tab_agente2 = st.tabs(
+        ["Radar de Vagas Estratégicas", "Candidatura de Alta Aderência"]
+    )
+    with tab_radar:
+        render_radar()
+    with tab_agente2:
+        render_agente2()
 
 
 if __name__ == "__main__":
