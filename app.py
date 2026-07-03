@@ -11,6 +11,7 @@ from utils.job_radar import (
     buscar_adzuna,
     buscar_greenhouse,
     buscar_lever,
+    campos_faltantes_para_avaliacao,
     inferir_plataforma,
     normalizar_para_radar,
     radar_para_vagas_crm,
@@ -24,6 +25,7 @@ from utils.sheets import (
     atualizar_vaga,
     conectar_planilha,
     enviar_para_vagas_crm,
+    encontrar_duplicata_link,
     garantir_abas_radar,
     atualizar_link_pendente,
     ler_empresas_alvo,
@@ -349,7 +351,22 @@ def render_radar() -> None:
             for item in pendentes:
                 link_pendente = item.get("Link", "")
                 if not link_pendente:
-                    atualizar_link_pendente(planilha, item["_row_number"], {}, "Precisa descrição")
+                    atualizar_link_pendente(
+                        planilha,
+                        item["_row_number"],
+                        {"Observações": "Não foi possível extrair dados automaticamente. Cole a descrição da vaga manualmente."},
+                        "Precisa descrição",
+                    )
+                    continue
+                duplicada_linha = encontrar_duplicata_link(planilha, link_pendente, item["_row_number"])
+                if duplicada_linha:
+                    atualizar_link_pendente(
+                        planilha,
+                        item["_row_number"],
+                        {"Observações": f"Link duplicado. Já existe na linha {duplicada_linha}."},
+                        "Duplicada",
+                    )
+                    processadas += 1
                     continue
                 plataforma = inferir_plataforma(link_pendente)
                 extraido = extrair_dados_link(
@@ -357,7 +374,19 @@ def render_radar() -> None:
                     estruturador=estruturar_link_com_openai(link_pendente, plataforma),
                 )
                 crm = preview_para_crm(extraido)
-                status = "Avaliar" if extraido.get("status_extracao") in {"sucesso", "parcial"} else "Precisa descrição"
+                faltantes = campos_faltantes_para_avaliacao(crm)
+                if extraido.get("status_extracao") == "sucesso" and not faltantes:
+                    status = "Avaliar"
+                    crm["Observações"] = extraido.get("observacoes_extracao", "Extração automática concluída.")
+                elif extraido.get("status_extracao") == "parcial" or faltantes:
+                    status = "Precisa descrição"
+                    crm["Observações"] = (
+                        "Extração parcial. Complete manualmente: "
+                        + (", ".join(faltantes) if faltantes else "revise a descrição da vaga.")
+                    )
+                else:
+                    status = "Precisa descrição"
+                    crm["Observações"] = "Não foi possível extrair dados automaticamente. Cole a descrição da vaga manualmente."
                 atualizar_link_pendente(planilha, item["_row_number"], crm, status)
                 processadas += 1
             st.success(f"{processadas} link(s) pendente(s) processado(s).")

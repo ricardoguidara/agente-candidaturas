@@ -275,3 +275,13 @@ def radar_para_vagas_crm(vaga: dict[str, Any]) -> dict[str, Any]:
         "Descrição da vaga": vaga.get("descricao", vaga.get("descricao_resumida", "")),
         "Observações": vaga.get("observacoes", vaga.get("motivo", "")),
     }
+
+
+def campos_faltantes_para_avaliacao(vaga_crm: dict[str, Any]) -> list[str]:
+    campos = [
+        "Empresa",
+        "Cargo",
+        "Link",
+        "Descrição da vaga",
+    ]
+    return [campo for campo in campos if not str(vaga_crm.get(campo, "")).strip()]

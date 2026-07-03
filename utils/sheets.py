@@ -329,6 +329,20 @@ def _vaga_duplicada(existentes: list[dict[str, Any]], vaga: dict[str, Any]) -> b
     return False
 
 
+def encontrar_duplicata_link(planilha: gspread.Spreadsheet, link: str, row_number: int) -> int | None:
+    if not link:
+        return None
+    ws = _obter_ou_criar_worksheet(planilha, VAGAS_WORKSHEET, VAGAS_CRM_RADAR_HEADERS)
+    registros = ws.get_all_records()
+    link_normalizado = _normalizar_texto(link)
+    for index, registro in enumerate(registros, start=2):
+        if index == row_number:
+            continue
+        if link_normalizado and link_normalizado == _normalizar_texto(registro.get("Link")):
+            return index
+    return None
+
+
 def enviar_para_vagas_crm(planilha: gspread.Spreadsheet, vagas: list[dict[str, Any]]) -> tuple[int, list[str]]:
     if not vagas:
         return 0, []
@@ -370,13 +384,14 @@ def atualizar_link_pendente(
         colunas = _garantir_colunas(ws, VAGAS_CRM_RADAR_HEADERS)
         atual = ws.row_values(row_number)
         updates = []
+        sobrescrever = {"Status", "Observações"}
         for chave, valor in dados.items():
             coluna = colunas.get(chave)
             if not coluna:
                 _warning(f"Coluna `{chave}` não encontrada na aba `{VAGAS_WORKSHEET}`.")
                 continue
             atual = ensure_row_length(atual, coluna)
-            if str(atual[coluna - 1]).strip():
+            if chave not in sobrescrever and str(atual[coluna - 1]).strip():
                 continue
             updates.append(
                 {

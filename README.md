@@ -88,6 +88,13 @@ Também é possível cadastrar previamente uma linha na aba `Vagas_CRM` com `Lin
 
 Depois, no Radar, clique em `Processar links pendentes`. O app tenta extrair os dados do link, preenche apenas campos vazios e preserva qualquer campo já preenchido manualmente. Se a extração funcionar, o status muda para `Avaliar`. Se não houver descrição suficiente, o status muda para `Precisa descrição`.
 
+Links pendentes nunca devem ficar sem desfecho após o processamento:
+
+- se o link já existir em outra linha, o status muda para `Duplicada` e `Observações` recebe a linha original;
+- se a página bloquear leitura ou não houver descrição suficiente, o status muda para `Precisa descrição`;
+- se a extração for parcial, os campos encontrados são preenchidos e `Observações` lista o que precisa ser completado;
+- se a extração for bem-sucedida, o status muda para `Avaliar`.
+
 ### Limitações LinkedIn/Gupy
 
 Links LinkedIn e Gupy são aceitos para entrada manual. O app só tenta ler metadados ou conteúdo público. Ele não usa login, navegador, cookies, captcha, automação ou scraping agressivo. Se a descrição completa não estiver pública, a vaga deve ser complementada manualmente.
@@ -112,6 +119,7 @@ O runner automático:
 - remove duplicatas por `Link` ou `Empresa + Cargo`;
 - insere novas vagas em `Vagas_CRM` com `Status = Avaliar`;
 - registra logs simples no console da Action.
+- processa linhas `Status = Link pendente`, registrando no console quantas foram encontradas, concluídas, duplicadas, marcadas como `Precisa descrição` ou tratadas com erro.
 
 Secrets necessários no GitHub Actions:
 
