@@ -1,4 +1,6 @@
-Gere o texto final de um CV para Ricardo Guidara, adaptado à vaga.
+Gere o campo `cv_texto_final` como texto final de currículo para Ricardo Guidara, adaptado à vaga.
+
+O resultado deve parecer um documento final enviado a recrutadores, não uma explicação sobre o documento.
 
 Regras rígidas de veracidade:
 - Não criar campos inexistentes.
@@ -11,38 +13,48 @@ Regras rígidas de veracidade:
 - Se um dado não existir no perfil-base, omita o campo.
 - Adaptar o CV à vaga, mas preservar veracidade.
 
+Regras rígidas de limpeza:
+- Não usar markdown.
+- Não usar **negrito**.
+- Não usar [links](url).
+- Não usar separadores como ---.
+- Não usar títulos com #.
+- Não incluir frases meta como "Este CV foi elaborado para...".
+- Não incluir "CV direcionado", "documento adaptado", observações sobre a vaga ou notas finais explicativas.
+- Não incluir expectativa salarial no CV.
+- Salário deve ficar apenas em `respostas_formulario` ou no campo `expectativa_salarial` da análise.
+- Para LinkedIn, escrever exatamente: LinkedIn: https://www.linkedin.com/in/ricardo-guidara/
+- Para portfólio, escrever exatamente: Portfolio: https://ricardoguidara.com/
+
 Regras de idioma:
 - Para vagas brasileiras, gerar CV em português.
 - Para vagas internacionais ou descrição em inglês, gerar CV em inglês.
 
-Regras de formato:
+Regras de adaptação por tipo de vaga:
+- Para Creative Leader / Creative Director: priorizar liderança criativa, marca, storytelling, campanhas, conteúdo, clientes, qualidade criativa e gestão de equipes.
+- Para AI Creative Director: priorizar IA generativa, creative operations, escala, automação criativa, workflows e liderança.
+- Para Gerente de Marketing/Conteúdo: priorizar estratégia, conteúdo, marca, stakeholders, canais e resultados.
+- Para Coordenador/Gerente audiovisual: priorizar produção, operação, qualidade, cronograma, fornecedores e entrega.
+- Para Superside / AI Creative Director: priorizar IA, Creative Operations, Generative AI workflows, brand storytelling, escala, automação criativa e liderança.
+
+Regras de formato do currículo:
 - O CV deve ser limpo, profissional, ATS-friendly e orientado a liderança, estratégia, IA, conteúdo, criação, audiovisual e operações criativas, conforme a vaga.
 - Não gerar DOCX.
-- Não usar markdown de link.
-- Para portfólio, escrever exatamente: Portfolio: https://ricardoguidara.com/
-- Estruture com seções claras, sem tabelas complexas.
+- Estruture com seções claras e texto final, sem tabelas complexas.
 - Use bullets objetivos e específicos, aproveitando os dados canônicos do perfil-base.
-
-Regras salariais:
-- CLT: até R$ 15.000/mês.
-- PJ: até R$ 28.000/mês.
-- Para vagas PJ ou remotas internacionais, não sugerir acima de R$ 28.000/mês sem autorização explícita.
-- Para Superside / AI Creative Director, quando houver expectativa salarial no pacote, usar R$ 25.000 a R$ 28.000/mês PJ.
-- Se precisar converter para USD, sugerir uma faixa equivalente moderada e coerente com o teto PJ.
-
-Regra para Superside / AI Creative Director:
-- Priorize IA, Creative Operations, Generative AI workflows, liderança criativa, brand storytelling e operações criativas.
+- Evite texto genérico. Conecte experiências reais, clientes, ferramentas e conquistas do perfil aos requisitos da vaga.
 
 Estrutura recomendada:
-- Cabeçalho com nome, local, LinkedIn e Portfolio.
-- Headline alinhada à vaga.
-- Resumo profissional.
-- Competências-chave.
-- Experiência profissional relevante.
-- Clientes e projetos selecionados, quando aderente à vaga.
-- Formação.
-- Ferramentas.
-- Idiomas.
+- Ricardo Guidara
+- Headline alinhada à vaga
+- Local, LinkedIn e Portfolio
+- Resumo profissional
+- Competências-chave
+- Experiência profissional relevante
+- Clientes e projetos selecionados, quando aderente à vaga
+- Formação
+- Ferramentas
+- Idiomas
 
 Perfil base:
 {{PERFIL_BASE}}

@@ -35,6 +35,13 @@ PADROES_CV_INVALIDO = [
     "Endereço",
     "Endereco",
     "https://ricardoguidara.com/(https://ricardoguidara.com/)",
+    "Este CV foi elaborado",
+    "CV direcionado",
+    "Expectativa Salarial",
+    "[LinkedIn]",
+    "](",
+    "**",
+    "---",
 ]
 
 

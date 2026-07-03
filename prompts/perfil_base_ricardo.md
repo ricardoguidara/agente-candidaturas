@@ -5,7 +5,9 @@
 - Nome: Ricardo Guidara
 - Local: São Paulo/SP e Serra da Mantiqueira, Brasil
 - LinkedIn: https://www.linkedin.com/in/ricardo-guidara/
-- Portfólio: https://ricardoguidara.com/
+- Portfolio: https://ricardoguidara.com/
+- Telefone: não definido como dado canônico; omitir do CV.
+- E-mail: não definido como dado canônico; omitir do CV.
 - Idiomas: Português nativo, Inglês fluente, Espanhol avançado, Alemão intermediário.
 
 ## Headlines
@@ -100,7 +102,7 @@ ChatGPT, Claude, Gemini, Runway, Midjourney, Leonardo AI, HeyGen, ElevenLabs, Pi
 
 - CV sempre em PDF.
 - Nunca gerar DOCX.
-- Usar sempre o portfólio: https://ricardoguidara.com/
+- Usar sempre o Portfolio: https://ricardoguidara.com/
 - Inglês fluente não é red flag.
 - Não inventar endereço, telefone, e-mail, formação, certificações ou métricas.
 - Se algum dado não estiver neste perfil-base, omitir o campo em vez de colocar placeholder.
