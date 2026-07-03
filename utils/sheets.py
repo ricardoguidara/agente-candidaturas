@@ -71,6 +71,19 @@ VAGAS_CRM_RADAR_HEADERS = [
     "Descrição da vaga",
     "Observações",
 ]
+STATUS_LINK_PENDENTE_CANONICO = "Link pendente"
+STATUS_LINK_PENDENTE_VARIANTES = {
+    "link pendente",
+    "link pender",
+}
+OBSERVACOES_ALIASES = {
+    "observações",
+    "observacoes",
+    "observação",
+    "observacao",
+    "observações da vaga",
+    "observacoes da vaga",
+}
 
 
 class SheetsClientError(RuntimeError):
@@ -220,10 +233,16 @@ def ler_vagas_avaliar(planilha: gspread.Spreadsheet) -> list[dict[str, Any]]:
 
 def ler_links_pendentes(planilha: gspread.Spreadsheet) -> list[dict[str, Any]]:
     ws = _obter_ou_criar_worksheet(planilha, VAGAS_WORKSHEET, VAGAS_CRM_RADAR_HEADERS)
+    colunas = _garantir_colunas(ws, VAGAS_CRM_RADAR_HEADERS)
     registros = ws.get_all_records()
     pendentes = []
     for index, registro in enumerate(registros, start=2):
-        if str(registro.get("Status", "")).strip().lower() == "link pendente":
+        if _is_link_pendente(registro.get("Status")):
+            if str(registro.get("Status", "")).strip() != STATUS_LINK_PENDENTE_CANONICO:
+                coluna_status = colunas.get("Status")
+                if coluna_status:
+                    ws.update_cell(index, coluna_status, STATUS_LINK_PENDENTE_CANONICO)
+                    registro["Status"] = STATUS_LINK_PENDENTE_CANONICO
             registro["_row_number"] = index
             pendentes.append(registro)
     return pendentes
@@ -314,6 +333,46 @@ def _normalizar_texto(valor: Any) -> str:
     return str(valor or "").strip().lower()
 
 
+def _normalizar_status(valor: Any) -> str:
+    return " ".join(str(valor or "").strip().lower().split())
+
+
+def _is_link_pendente(valor: Any) -> bool:
+    return _normalizar_status(valor) in STATUS_LINK_PENDENTE_VARIANTES
+
+
+def _resolver_coluna_observacoes(colunas: dict[str, int]) -> int | None:
+    if "Observações" in colunas:
+        return colunas["Observações"]
+    for nome, coluna in colunas.items():
+        if _normalizar_status(nome) in OBSERVACOES_ALIASES:
+            return coluna
+    return max(colunas.values(), default=0) or None
+
+
+def diagnosticar_vagas_crm(planilha: gspread.Spreadsheet) -> dict[str, Any]:
+    ws = _obter_ou_criar_worksheet(planilha, VAGAS_WORKSHEET, VAGAS_CRM_RADAR_HEADERS)
+    registros = ws.get_all_records()
+    contagem_status: dict[str, int] = {}
+    link_pendente_exato = 0
+
+    for registro in registros:
+        status_bruto = str(registro.get("Status", ""))
+        status = status_bruto.strip()
+        chave = status or "(vazio)"
+        contagem_status[chave] = contagem_status.get(chave, 0) + 1
+        if status_bruto == STATUS_LINK_PENDENTE_CANONICO:
+            link_pendente_exato += 1
+
+    return {
+        "nome_planilha": getattr(planilha, "title", ""),
+        "abas": [worksheet.title for worksheet in planilha.worksheets()],
+        "total_linhas_vagas_crm": len(registros),
+        "contagem_status": contagem_status,
+        "link_pendente_exato": link_pendente_exato,
+    }
+
+
 def _vaga_duplicada(existentes: list[dict[str, Any]], vaga: dict[str, Any]) -> bool:
     link = _normalizar_texto(vaga.get("Link"))
     empresa = _normalizar_texto(vaga.get("Empresa"))
@@ -386,7 +445,7 @@ def atualizar_link_pendente(
         updates = []
         sobrescrever = {"Status", "Observações"}
         for chave, valor in dados.items():
-            coluna = colunas.get(chave)
+            coluna = _resolver_coluna_observacoes(colunas) if chave == "Observações" else colunas.get(chave)
             if not coluna:
                 _warning(f"Coluna `{chave}` não encontrada na aba `{VAGAS_WORKSHEET}`.")
                 continue

@@ -22,6 +22,7 @@ from utils.sheets import (  # noqa: E402
     SheetsClientError,
     atualizar_link_pendente,
     conectar_planilha,
+    diagnosticar_vagas_crm,
     enviar_para_vagas_crm,
     encontrar_duplicata_link,
     garantir_abas_radar,
@@ -89,11 +90,12 @@ def _crm_from_extracao(extraido: dict[str, Any]) -> dict[str, Any]:
 def _processar_links_pendentes(planilha, stats: RadarStats) -> None:
     pendentes = ler_links_pendentes(planilha)
     stats.links_pendentes_encontrados = len(pendentes)
-    print(f"Links pendentes encontrados: {len(pendentes)}")
+    print(f"Linhas com Status normalizado como Link pendente: {len(pendentes)}")
 
     for item in pendentes:
         row_number = item["_row_number"]
         link = str(item.get("Link", "")).strip()
+        print(f"Linha {row_number}: processando link pendente: {link or '(sem link)'}")
         if not link:
             atualizar_link_pendente(
                 planilha,
@@ -102,7 +104,7 @@ def _processar_links_pendentes(planilha, stats: RadarStats) -> None:
                 "Precisa descrição",
             )
             stats.links_pendentes_precisa_descricao += 1
-            print(f"Linha {row_number}: sem link, marcada como Precisa descrição.")
+            print(f"Linha {row_number}: resultado=precisa descrição; motivo=sem link.")
             continue
 
         duplicada_linha = encontrar_duplicata_link(planilha, link, row_number)
@@ -114,7 +116,7 @@ def _processar_links_pendentes(planilha, stats: RadarStats) -> None:
                 "Duplicada",
             )
             stats.links_pendentes_duplicados += 1
-            print(f"Linha {row_number}: link duplicado na linha {duplicada_linha}.")
+            print(f"Linha {row_number}: resultado=duplicado; linha_original={duplicada_linha}.")
             continue
 
         try:
@@ -127,7 +129,7 @@ def _processar_links_pendentes(planilha, stats: RadarStats) -> None:
                 observacao = extraido.get("observacoes_extracao", "Extração automática concluída.")
                 status = "Avaliar"
                 stats.links_pendentes_sucesso += 1
-                print(f"Linha {row_number}: extração bem-sucedida.")
+                print(f"Linha {row_number}: resultado=sucesso; status=Avaliar.")
             elif status_extracao == "parcial" or faltantes:
                 observacao = (
                     "Extração parcial. Complete manualmente: "
@@ -135,12 +137,12 @@ def _processar_links_pendentes(planilha, stats: RadarStats) -> None:
                 )
                 status = "Precisa descrição"
                 stats.links_pendentes_precisa_descricao += 1
-                print(f"Linha {row_number}: extração parcial, precisa descrição.")
+                print(f"Linha {row_number}: resultado=precisa descrição; faltantes={', '.join(faltantes) or 'revisão manual'}.")
             else:
                 observacao = "Não foi possível extrair dados automaticamente. Cole a descrição da vaga manualmente."
                 status = "Precisa descrição"
                 stats.links_pendentes_precisa_descricao += 1
-                print(f"Linha {row_number}: extração insuficiente, precisa descrição.")
+                print(f"Linha {row_number}: resultado=precisa descrição; motivo=extração insuficiente.")
 
             crm["Observações"] = observacao
             atualizar_link_pendente(planilha, row_number, crm, status)
@@ -153,7 +155,7 @@ def _processar_links_pendentes(planilha, stats: RadarStats) -> None:
             )
             stats.links_pendentes_precisa_descricao += 1
             stats.links_pendentes_erros += 1
-            print(f"Linha {row_number}: erro ao processar link pendente: {exc}")
+            print(f"Linha {row_number}: resultado=erro; status=Precisa descrição; erro={exc}")
 
 
 def _buscar_adzuna_por_config(configs: list[dict[str, Any]], stats: RadarStats) -> list[dict[str, Any]]:
@@ -222,9 +224,18 @@ def main() -> int:
     try:
         planilha = conectar_planilha()
         garantir_abas_radar(planilha)
+        diagnostico = diagnosticar_vagas_crm(planilha)
     except SheetsClientError as exc:
         print(f"Erro de planilha: {exc}")
         return 1
+
+    print(f"Planilha conectada: {diagnostico['nome_planilha']}")
+    print(f"Abas encontradas: {', '.join(diagnostico['abas'])}")
+    print(f"Total de linhas em Vagas_CRM: {diagnostico['total_linhas_vagas_crm']}")
+    print("Contagem de Status em Vagas_CRM:")
+    for status, quantidade in sorted(diagnostico["contagem_status"].items()):
+        print(f"- {status}: {quantidade}")
+    print(f'Linhas com Status exatamente igual a "Link pendente": {diagnostico["link_pendente_exato"]}')
 
     configs = ler_radar_config(planilha)
     empresas = ler_empresas_alvo(planilha)

@@ -85,6 +85,7 @@ Ao enviar, a vaga entra em `Vagas_CRM` com `Status = Avaliar`.
 ### Links pendentes
 
 Também é possível cadastrar previamente uma linha na aba `Vagas_CRM` com `Link` e `Status = Link pendente`.
+O processamento normaliza variações simples do status, como `link pendente`, espaços extras ou `Link pender`, e corrige a célula para `Link pendente` antes de tentar extrair a vaga.
 
 Depois, no Radar, clique em `Processar links pendentes`. O app tenta extrair os dados do link, preenche apenas campos vazios e preserva qualquer campo já preenchido manualmente. Se a extração funcionar, o status muda para `Avaliar`. Se não houver descrição suficiente, o status muda para `Precisa descrição`.
 
@@ -94,6 +95,8 @@ Links pendentes nunca devem ficar sem desfecho após o processamento:
 - se a página bloquear leitura ou não houver descrição suficiente, o status muda para `Precisa descrição`;
 - se a extração for parcial, os campos encontrados são preenchidos e `Observações` lista o que precisa ser completado;
 - se a extração for bem-sucedida, o status muda para `Avaliar`.
+
+Ao processar um link pendente, o sistema sempre atualiza a própria linha existente. Ele não insere uma nova linha para resolver pendências.
 
 ### Limitações LinkedIn/Gupy
 
@@ -118,8 +121,8 @@ O runner automático:
 - filtra vagas por score preliminar, com padrão `RADAR_SCORE_MIN = 65`;
 - remove duplicatas por `Link` ou `Empresa + Cargo`;
 - insere novas vagas em `Vagas_CRM` com `Status = Avaliar`;
-- registra logs simples no console da Action.
-- processa linhas `Status = Link pendente`, registrando no console quantas foram encontradas, concluídas, duplicadas, marcadas como `Precisa descrição` ou tratadas com erro.
+- registra logs no console da Action com nome da planilha conectada, abas encontradas, total de linhas em `Vagas_CRM`, contagem por `Status` e quantidade exata de `Link pendente`;
+- processa linhas `Status = Link pendente`, imprimindo a linha, o link processado e o resultado: sucesso, duplicado, precisa descrição ou erro tratado.
 
 Secrets necessários no GitHub Actions:
 
