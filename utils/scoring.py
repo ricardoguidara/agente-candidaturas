@@ -19,7 +19,7 @@ def _texto(valor, fallback: str = "") -> str:
     return texto or fallback
 
 
-def normalizar_analise(analise: dict) -> dict:
+def normalizar_analise(analise: dict, vaga: dict | None = None) -> dict:
     try:
         fit_score = int(float(analise.get("fit_score", 0)))
     except (TypeError, ValueError):
@@ -40,4 +40,10 @@ def normalizar_analise(analise: dict) -> dict:
     }
     for campo in CAMPOS_LISTA:
         normalizada[campo] = _lista(analise.get(campo))
+
+    contexto_vaga = " ".join(str(valor) for valor in (vaga or {}).values()).lower()
+    if "superside" in contexto_vaga or "ai creative director" in contexto_vaga:
+        normalizada["versao_cv_recomendada"] = "criativo_ia"
+        if "superside" in contexto_vaga:
+            normalizada["expectativa_salarial"] = "PJ entre R$ 25.000 e R$ 28.000/mês."
     return normalizada

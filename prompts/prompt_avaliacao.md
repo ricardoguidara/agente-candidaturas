@@ -2,6 +2,16 @@ Analise a aderência da vaga abaixo ao perfil de Ricardo Guidara.
 
 Use critérios de senioridade, escopo estratégico, aderência aos cargos-alvo, presença de IA/conteúdo/storytelling/criação/marketing/operações criativas, remuneração quando houver, modalidade de contratação e sinais de vaga operacional.
 
+Regras salariais obrigatórias:
+- CLT: até R$ 15.000/mês.
+- PJ: até R$ 28.000/mês.
+- Para vagas PJ ou remotas internacionais, não sugerir acima de R$ 28.000/mês sem autorização explícita.
+- Para Superside / AI Creative Director, a sugestão correta deve ficar entre R$ 25.000 e R$ 28.000/mês PJ.
+- Se precisar converter para USD, sugerir faixa equivalente moderada, coerente com o teto PJ.
+
+Regra de versão de CV:
+- Para Superside, AI Creative Director, Creative Operations, Generative AI Workflows ou vagas similares, priorize `criativo_ia` ou `operacoes_criativas`, nunca apenas `lideranca_criativa`.
+
 Perfil base:
 {{PERFIL_BASE}}
 

@@ -23,6 +23,16 @@ Regras de formato:
 - Estruture com seções claras, sem tabelas complexas.
 - Use bullets objetivos e específicos, aproveitando os dados canônicos do perfil-base.
 
+Regras salariais:
+- CLT: até R$ 15.000/mês.
+- PJ: até R$ 28.000/mês.
+- Para vagas PJ ou remotas internacionais, não sugerir acima de R$ 28.000/mês sem autorização explícita.
+- Para Superside / AI Creative Director, quando houver expectativa salarial no pacote, usar R$ 25.000 a R$ 28.000/mês PJ.
+- Se precisar converter para USD, sugerir uma faixa equivalente moderada e coerente com o teto PJ.
+
+Regra para Superside / AI Creative Director:
+- Priorize IA, Creative Operations, Generative AI workflows, liderança criativa, brand storytelling e operações criativas.
+
 Estrutura recomendada:
 - Cabeçalho com nome, local, LinkedIn e Portfolio.
 - Headline alinhada à vaga.

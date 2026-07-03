@@ -244,7 +244,7 @@ def main() -> None:
                     system_prompt="Você é um avaliador sênior de aderência entre vagas e perfis executivos criativos. Responda apenas JSON válido.",
                     user_prompt=prompt,
                 )
-                st.session_state.analise = normalizar_analise(analise_bruta)
+                st.session_state.analise = normalizar_analise(analise_bruta, vaga)
                 st.session_state.pacote = None
                 st.session_state.pdf_bytes = None
             except (OpenAIClientError, ValueError) as exc:

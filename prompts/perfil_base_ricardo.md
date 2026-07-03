@@ -92,6 +92,8 @@ ChatGPT, Claude, Gemini, Runway, Midjourney, Leonardo AI, HeyGen, ElevenLabs, Pi
 
 - CLT: até R$ 15.000/mês.
 - PJ: até R$ 28.000/mês.
+- Para vagas PJ/remotas internacionais, não sugerir acima de R$ 28.000/mês sem autorização explícita.
+- Para Superside / AI Creative Director, a sugestão correta fica entre R$ 25.000 e R$ 28.000/mês PJ.
 - Para vagas internacionais, converter com coerência para USD, sem ultrapassar a lógica da faixa PJ.
 
 ## Regras de candidatura
