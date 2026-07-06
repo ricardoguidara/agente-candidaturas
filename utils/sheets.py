@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from typing import Any
 
 import gspread
@@ -85,15 +86,42 @@ DEFAULT_RADAR_CONFIG_ROWS = [
     },
     {
         "termo_busca": "Creative Director",
-        "local": "Brazil",
+        "local": "Remote Brazil",
         "idioma": "EN/PT",
-        "modelo": "Remoto/Híbrido",
+        "modelo": "Remoto",
+        "prioridade": "Alta",
+        "ativo": "Sim",
+        "observacao": "",
+    },
+    {
+        "termo_busca": "Creative Director",
+        "local": "São Paulo",
+        "idioma": "EN/PT",
+        "modelo": "Híbrido",
         "prioridade": "Alta",
         "ativo": "Sim",
         "observacao": "",
     },
     {
         "termo_busca": "Head of Creative",
+        "local": "Remote Brazil",
+        "idioma": "EN/PT",
+        "modelo": "Remoto",
+        "prioridade": "Alta",
+        "ativo": "Sim",
+        "observacao": "",
+    },
+    {
+        "termo_busca": "Head de Criação",
+        "local": "São Paulo",
+        "idioma": "PT",
+        "modelo": "Híbrido",
+        "prioridade": "Alta",
+        "ativo": "Sim",
+        "observacao": "",
+    },
+    {
+        "termo_busca": "Creative Lead",
         "local": "Brazil",
         "idioma": "EN/PT",
         "modelo": "Remoto/Híbrido",
@@ -120,9 +148,27 @@ DEFAULT_RADAR_CONFIG_ROWS = [
         "observacao": "",
     },
     {
+        "termo_busca": "Gerente de Conteúdo",
+        "local": "Brazil",
+        "idioma": "PT",
+        "modelo": "Remoto/Híbrido",
+        "prioridade": "Alta",
+        "ativo": "Sim",
+        "observacao": "",
+    },
+    {
         "termo_busca": "Content Lead",
         "local": "Remote",
         "idioma": "EN",
+        "modelo": "Remoto",
+        "prioridade": "Alta",
+        "ativo": "Sim",
+        "observacao": "",
+    },
+    {
+        "termo_busca": "Head of Content",
+        "local": "Remote Brazil",
+        "idioma": "EN/PT",
         "modelo": "Remoto",
         "prioridade": "Alta",
         "ativo": "Sim",
@@ -138,10 +184,19 @@ DEFAULT_RADAR_CONFIG_ROWS = [
         "observacao": "",
     },
     {
-        "termo_busca": "Head of Content",
+        "termo_busca": "Brand Content Manager",
         "local": "Brazil",
         "idioma": "EN/PT",
         "modelo": "Remoto/Híbrido",
+        "prioridade": "Média",
+        "ativo": "Sim",
+        "observacao": "",
+    },
+    {
+        "termo_busca": "AI Creative Lead",
+        "local": "Remote",
+        "idioma": "EN",
+        "modelo": "Remoto",
         "prioridade": "Alta",
         "ativo": "Sim",
         "observacao": "",
@@ -494,6 +549,26 @@ def _normalizar_texto(valor: Any) -> str:
     return str(valor or "").strip().lower()
 
 
+def _normalizar_link(valor: Any) -> str:
+    parsed = urlparse(str(valor or "").strip())
+    if not parsed.scheme or not parsed.netloc:
+        return _normalizar_texto(valor)
+    query = [
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if not key.lower().startswith("utm_")
+        and key.lower() not in {"fbclid", "gclid", "msclkid", "mc_cid", "mc_eid", "trk", "ref"}
+    ]
+    cleaned = parsed._replace(
+        scheme=parsed.scheme.lower(),
+        netloc=parsed.netloc.lower().removeprefix("www."),
+        path=parsed.path.rstrip("/"),
+        query=urlencode(query, doseq=True),
+        fragment="",
+    )
+    return urlunparse(cleaned)
+
+
 def _normalizar_status(valor: Any) -> str:
     return " ".join(str(valor or "").strip().lower().split())
 
@@ -535,11 +610,11 @@ def diagnosticar_vagas_crm(planilha: gspread.Spreadsheet) -> dict[str, Any]:
 
 
 def _vaga_duplicada(existentes: list[dict[str, Any]], vaga: dict[str, Any]) -> bool:
-    link = _normalizar_texto(vaga.get("Link"))
+    link = _normalizar_link(vaga.get("Link"))
     empresa = _normalizar_texto(vaga.get("Empresa"))
     cargo = _normalizar_texto(vaga.get("Cargo"))
     for existente in existentes:
-        link_existente = _normalizar_texto(existente.get("Link"))
+        link_existente = _normalizar_link(existente.get("Link"))
         empresa_existente = _normalizar_texto(existente.get("Empresa"))
         cargo_existente = _normalizar_texto(existente.get("Cargo"))
         if link and link == link_existente:
@@ -554,11 +629,11 @@ def encontrar_duplicata_link(planilha: gspread.Spreadsheet, link: str, row_numbe
         return None
     ws = _obter_ou_criar_worksheet(planilha, VAGAS_WORKSHEET, VAGAS_CRM_RADAR_HEADERS)
     registros = ws.get_all_records()
-    link_normalizado = _normalizar_texto(link)
+    link_normalizado = _normalizar_link(link)
     for index, registro in enumerate(registros, start=2):
         if index == row_number:
             continue
-        if link_normalizado and link_normalizado == _normalizar_texto(registro.get("Link")):
+        if link_normalizado and link_normalizado == _normalizar_link(registro.get("Link")):
             return index
     return None
 

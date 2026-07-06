@@ -9,8 +9,9 @@ Esta versão implementa o **Agente 1: Radar de Vagas Estratégicas** e o **Agent
 - Conecta ao Google Sheets com credenciais em `st.secrets`.
 - Cria e usa abas de radar: `Radar_Config`, `Empresas_Alvo` e `Radar_Resultados`.
 - Permite entrada manual assistida de vagas para `Vagas_CRM`.
-- Busca vagas no Adzuna quando `ADZUNA_APP_ID` e `ADZUNA_APP_KEY` estão configurados.
-- Busca vagas públicas de empresas-alvo em Greenhouse, Lever e Gupy quando a URL/slug está configurada.
+- Busca vagas automaticamente com OpenAI Responses API + `web_search`.
+- Busca vagas públicas de empresas-alvo em Greenhouse e Lever quando a URL/slug está configurada.
+- Usa Adzuna apenas quando `ADZUNA_APP_ID` e `ADZUNA_APP_KEY` estão configurados.
 - Lê a aba `Vagas_CRM`.
 - Filtra vagas com `Status = Avaliar`.
 - Exibe vagas pendentes e detalhes da vaga selecionada.
@@ -35,7 +36,17 @@ Os dados canônicos do perfil de Ricardo ficam em `prompts/perfil_base_ricardo.m
 
 ## Agente 1: Radar de Vagas Estratégicas
 
-O Radar alimenta a planilha com oportunidades para avaliação posterior pelo Agente 2.
+O Radar roda de forma automática pelo GitHub Actions e alimenta a planilha com oportunidades para avaliação posterior pelo Agente 2.
+
+Arquitetura:
+
+```text
+Agente 1
+GitHub Actions + OpenAI Web Search + fontes públicas -> Vagas_CRM
+
+Agente 2
+Vagas_CRM -> análise -> CV PDF -> carta -> LinkedIn -> formulário -> checklist
+```
 
 Abas criadas ou garantidas:
 
@@ -45,16 +56,16 @@ Empresas_Alvo
 Radar_Resultados
 ```
 
-Fontes suportadas na v0.2:
+Fontes suportadas:
 
-- Inserir vaga por link, com tentativa de extração pública de HTML, metadados, OpenGraph e JSON-LD `JobPosting`.
-- Entrada manual assistida, incluindo links Gupy.
-- Adzuna API, opcional via secrets.
+- OpenAI Responses API com `web_search` como motor principal.
+- LinkedIn por descoberta web pública, sem login ou scraping logado.
+- Gupy por descoberta web pública e link manual.
+- Recruit.net e Empregando Brasil via OpenAI Web Search com filtro de domínio.
+- Páginas públicas de carreiras e job boards pela busca geral.
 - Greenhouse público via job board API.
 - Lever público via postings API.
-- Gupy por link manual, página pública de empresa-alvo e API opcional quando houver token/acesso.
-- Empregando Brasil e Recruit.net por busca pública HTTP/HTML.
-- LinkedIn apenas por descoberta de links públicos via busca web opcional, sem leitura logada.
+- Adzuna API opcional via secrets.
 
 Limitações:
 
@@ -111,7 +122,7 @@ Ao processar um link pendente, o sistema sempre atualiza a própria linha existe
 
 Links LinkedIn e Gupy são aceitos para entrada manual. O app só tenta ler metadados ou conteúdo público. Ele não usa login, navegador, cookies, captcha, automação ou scraping agressivo. Se a descrição completa não estiver pública, a vaga deve ser complementada manualmente.
 
-Para Gupy, linhas em `Vagas_CRM` com `Status = Link pendente` e link em `gupy.io`, `jobs.gupy.io` ou `gupy.com.br` são processadas pelo runner. Se a página pública trouxer empresa, cargo e descrição suficiente, o status vira `Avaliar`. Se a descrição não puder ser extraída, o status vira `Precisa descrição` e `Observações` recebe a orientação para colar a descrição manualmente.
+Para LinkedIn e Gupy, o Radar pode descobrir links públicos e inserir a vaga como `Precisa descrição` quando a descrição completa não estiver acessível. Linhas em `Vagas_CRM` com `Status = Link pendente` e link Gupy em `gupy.io`, `jobs.gupy.io` ou `gupy.com.br` também são processadas pelo runner.
 
 ### Radar automático com GitHub Actions
 
@@ -125,16 +136,16 @@ O workflow `.github/workflows/radar.yml` permite rodar manualmente em **GitHub >
 
 O runner automático:
 
+- processa primeiro links pendentes em `Vagas_CRM`;
 - lê `Radar_Config`;
-- busca Adzuna quando `ADZUNA_APP_ID` e `ADZUNA_APP_KEY` existem;
+- executa OpenAI Web Search respeitando `RADAR_MAX_WEB_SEARCH_CALLS`;
+- busca LinkedIn, Gupy, Recruit.net, Empregando Brasil e busca geral usando filtros de domínio quando aplicável;
 - lê `Empresas_Alvo`;
-- busca Greenhouse, Lever e Gupy públicos quando `plataforma` for `Greenhouse`, `Lever` ou `Gupy`;
-- usa `GUPY_API_TOKEN` apenas se ele existir; sem token, tenta leitura pública e segue sem falhar;
-- busca Empregando Brasil e Recruit.net por HTTP/HTML público;
-- usa Google Programmable Search opcional para descobrir links públicos, inclusive LinkedIn/Gupy, quando `GOOGLE_SEARCH_API_KEY` e `GOOGLE_SEARCH_CX` existem;
+- busca Greenhouse e Lever públicos quando `plataforma` for `Greenhouse` ou `Lever`;
+- busca Adzuna somente quando `ADZUNA_APP_ID` e `ADZUNA_APP_KEY` existem;
 - filtra vagas por score preliminar, com padrão `RADAR_SCORE_MIN = 65`;
 - remove duplicatas por `Link` ou `Empresa + Cargo`;
-- insere novas vagas em `Vagas_CRM` com `Status = Avaliar`;
+- insere novas vagas em `Vagas_CRM` com `Status = Avaliar` ou `Precisa descrição`;
 - registra logs no console da Action com nome da planilha conectada, abas encontradas, total de linhas em `Vagas_CRM`, contagem por `Status` e quantidade exata de `Link pendente`;
 - processa linhas `Status = Link pendente`, imprimindo a linha, o link processado e o resultado: sucesso, duplicado, precisa descrição ou erro tratado.
 
@@ -151,16 +162,16 @@ Secrets opcionais:
 ADZUNA_APP_ID
 ADZUNA_APP_KEY
 GUPY_API_TOKEN
-GOOGLE_SEARCH_API_KEY
-GOOGLE_SEARCH_CX
 OPENAI_API_KEY
 OPENAI_MODEL
+OPENAI_RADAR_MODEL
 ```
 
 Variáveis opcionais:
 
 ```text
 RADAR_SCORE_MIN=65
+RADAR_MAX_WEB_SEARCH_CALLS=8
 RADAR_ADZUNA_COUNTRY=br
 RADAR_RESULTS_PER_QUERY=20
 ```

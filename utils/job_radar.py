@@ -12,6 +12,7 @@ from urllib.request import urlopen
 
 TERMOS_PRIORITARIOS = {
     "ai creative director": 28,
+    "ai creative lead": 24,
     "creative director": 24,
     "head of creative": 24,
     "head de criação": 24,

@@ -24,6 +24,7 @@ from utils.sheets import (
     SheetsClientError,
     atualizar_vaga,
     conectar_planilha,
+    diagnosticar_vagas_crm,
     enviar_para_vagas_crm,
     encontrar_duplicata_link,
     garantir_abas_radar,
@@ -248,274 +249,170 @@ def sidebar_config() -> None:
 
 def render_radar() -> None:
     st.subheader("Radar de Vagas Estratégicas")
-    st.caption("Agente 1: organiza oportunidades relevantes sem scraping logado, candidatura automática ou burla de plataformas.")
+    st.caption("Agente 1 automático: GitHub Actions + OpenAI Web Search + fontes públicas alimentando Vagas_CRM.")
 
     try:
         planilha = conectar_planilha()
+        garantir_abas_radar(planilha)
+        diagnostico = diagnosticar_vagas_crm(planilha)
+        resultados_planilha = ler_radar_resultados(planilha)
     except SheetsClientError as exc:
         st.error(str(exc))
         return
 
-    col_setup, col_info = st.columns([1, 2])
-    with col_setup:
-        if st.button("Garantir abas do Radar", use_container_width=True):
-            try:
-                garantir_abas_radar(planilha)
-                st.success("Abas do Radar prontas.")
-            except SheetsClientError as exc:
-                st.error(str(exc))
-    with col_info:
-        st.info("Gupy e LinkedIn são aceitos como links manuais. Busca automática nesta versão: Adzuna, Greenhouse e Lever públicos.")
+    status_counts = diagnostico.get("contagem_status", {})
+    ultima_execucao = max(
+        [str(item.get("data_busca", "")) for item in resultados_planilha if item.get("data_busca")],
+        default="Ainda não registrada",
+    )
+    total_avaliar = status_counts.get("Avaliar", 0)
+    total_precisa = status_counts.get("Precisa descrição", 0)
 
-    st.markdown("### Inserir vaga por link")
-    url_vaga = st.text_input("URL da vaga", key="radar_url_vaga")
-    c_link1, c_link2 = st.columns(2)
-    with c_link1:
+    st.success("Radar automático ativo")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Última execução conhecida", ultima_execucao)
+    m2.metric("Vagas em Avaliar", total_avaliar)
+    m3.metric("Precisa descrição", total_precisa)
+    m4.metric("Capturadas pelo Radar", len(resultados_planilha))
+    st.info("A operação normal acontece pelo GitHub Actions. Use o Agente 2 para revisar vagas novas e gerar candidaturas.")
+
+    with st.expander("Ferramentas manuais e diagnóstico", expanded=False):
+        st.markdown("### Inserir vaga por link")
+        url_vaga = st.text_input("URL da vaga", key="radar_url_vaga")
         if st.button("Extrair dados da vaga", use_container_width=True):
             if not url_vaga:
                 st.warning("Cole uma URL de vaga antes de extrair.")
             else:
                 try:
                     plataforma = inferir_plataforma(url_vaga)
-                    preview = extrair_dados_link(
+                    st.session_state.link_preview = extrair_dados_link(
                         url_vaga,
                         estruturador=estruturar_link_com_openai(url_vaga, plataforma),
                     )
-                    st.session_state.link_preview = preview
-                    if preview.get("status_extracao") == "precisa_descricao":
-                        st.warning("Não foi possível extrair descrição suficiente. Revise e cole a descrição manualmente antes de enviar.")
-                    else:
-                        st.success("Dados extraídos. Revise a prévia antes de enviar.")
-                except OpenAIClientError as exc:
-                    st.error(str(exc))
+                    st.success("Dados extraídos. Revise a prévia antes de enviar.")
                 except Exception as exc:
                     st.error(f"Não foi possível extrair a vaga: {exc}")
 
-    preview = st.session_state.link_preview
-    if preview:
-        st.markdown("#### Prévia editável")
-        p1, p2, p3 = st.columns(3)
-        preview["empresa"] = p1.text_input("Empresa", value=preview.get("empresa", ""), key="preview_empresa")
-        preview["cargo"] = p2.text_input("Cargo", value=preview.get("cargo", ""), key="preview_cargo")
-        preview["plataforma"] = p3.text_input("Plataforma", value=preview.get("plataforma", ""), key="preview_plataforma")
-        p4, p5, p6, p7 = st.columns(4)
-        preview["local"] = p4.text_input("Local", value=preview.get("local", ""), key="preview_local")
-        preview["modelo"] = p5.selectbox(
-            "Modelo",
-            ["Remoto", "Híbrido", "Presencial", "Não informado"],
-            index=["Remoto", "Híbrido", "Presencial", "Não informado"].index(preview.get("modelo", "Não informado")) if preview.get("modelo", "Não informado") in ["Remoto", "Híbrido", "Presencial", "Não informado"] else 3,
-            key="preview_modelo",
-        )
-        preview["regime"] = p6.selectbox(
-            "Regime",
-            ["CLT", "PJ", "Freelancer", "Temporário", "Não informado"],
-            index=["CLT", "PJ", "Freelancer", "Temporário", "Não informado"].index(preview.get("regime", "Não informado")) if preview.get("regime", "Não informado") in ["CLT", "PJ", "Freelancer", "Temporário", "Não informado"] else 4,
-            key="preview_regime",
-        )
-        preview["senioridade"] = p7.selectbox(
-            "Senioridade",
-            ["Coordenador", "Gerente", "Head", "Diretor", "Lead", "Sênior", "Não informado"],
-            index=["Coordenador", "Gerente", "Head", "Diretor", "Lead", "Sênior", "Não informado"].index(preview.get("senioridade", "Não informado")) if preview.get("senioridade", "Não informado") in ["Coordenador", "Gerente", "Head", "Diretor", "Lead", "Sênior", "Não informado"] else 6,
-            key="preview_senioridade",
-        )
-        preview["area_principal"] = st.selectbox(
-            "Área principal",
-            ["Criação", "Marketing", "Conteúdo", "Comunicação", "Audiovisual", "IA", "Creative Operations", "Não informado"],
-            index=["Criação", "Marketing", "Conteúdo", "Comunicação", "Audiovisual", "IA", "Creative Operations", "Não informado"].index(preview.get("area_principal", "Não informado")) if preview.get("area_principal", "Não informado") in ["Criação", "Marketing", "Conteúdo", "Comunicação", "Audiovisual", "IA", "Creative Operations", "Não informado"] else 7,
-            key="preview_area",
-        )
-        preview["descricao_vaga"] = st.text_area("Descrição da vaga", value=preview.get("descricao_vaga", ""), height=220, key="preview_descricao")
-        preview["observacoes_extracao"] = st.text_area("Observações", value=preview.get("observacoes_extracao", ""), height=90, key="preview_observacoes")
-        st.metric("Score preliminar", preview.get("score_preliminar", 0))
-        if preview.get("red_flags"):
-            st.warning(preview["red_flags"])
-        st.caption(f"Status da extração: {preview.get('status_extracao', '')}")
-
-        with c_link2:
-            if st.button("Enviar para Vagas_CRM", type="primary", use_container_width=True):
-                crm_vaga = preview_para_crm(preview)
+        preview = st.session_state.link_preview
+        if preview:
+            preview["empresa"] = st.text_input("Empresa", value=preview.get("empresa", ""), key="preview_empresa")
+            preview["cargo"] = st.text_input("Cargo", value=preview.get("cargo", ""), key="preview_cargo")
+            preview["descricao_vaga"] = st.text_area("Descrição da vaga", value=preview.get("descricao_vaga", ""), height=180, key="preview_descricao")
+            preview["observacoes_extracao"] = st.text_area("Observações", value=preview.get("observacoes_extracao", ""), height=80, key="preview_observacoes")
+            if st.button("Enviar link para Vagas_CRM", type="primary", use_container_width=True):
                 try:
-                    inseridas, avisos = enviar_para_vagas_crm(planilha, [crm_vaga])
-                    if inseridas:
-                        st.success("Vaga enviada para Vagas_CRM com status Avaliar.")
+                    inseridas, avisos = enviar_para_vagas_crm(planilha, [preview_para_crm(preview)])
+                    st.success(f"{inseridas} vaga(s) enviada(s) para Vagas_CRM.")
                     for aviso in avisos:
                         st.warning(aviso)
                 except SheetsClientError as exc:
                     st.error(str(exc))
 
-    st.markdown("### Processar links pendentes")
-    if st.button("Processar links pendentes", use_container_width=True):
-        try:
-            pendentes = ler_links_pendentes(planilha)
-            processadas = 0
-            for item in pendentes:
-                link_pendente = item.get("Link", "")
-                if not link_pendente:
-                    atualizar_link_pendente(
-                        planilha,
-                        item["_row_number"],
-                        {"Observações": "Não foi possível extrair dados automaticamente. Cole a descrição da vaga manualmente."},
-                        "Precisa descrição",
-                    )
-                    continue
-                duplicada_linha = encontrar_duplicata_link(planilha, link_pendente, item["_row_number"])
-                if duplicada_linha:
-                    atualizar_link_pendente(
-                        planilha,
-                        item["_row_number"],
-                        {"Observações": f"Link duplicado. Já existe na linha {duplicada_linha}."},
-                        "Duplicada",
-                    )
-                    processadas += 1
-                    continue
-                plataforma = inferir_plataforma(link_pendente)
-                extraido = extrair_dados_link(
-                    link_pendente,
-                    estruturador=estruturar_link_com_openai(link_pendente, plataforma),
-                )
-                crm = preview_para_crm(extraido)
-                faltantes = campos_faltantes_para_avaliacao(crm)
-                if extraido.get("status_extracao") == "sucesso" and not faltantes:
-                    status = "Avaliar"
-                    crm["Observações"] = extraido.get("observacoes_extracao", "Extração automática concluída.")
-                elif extraido.get("status_extracao") == "parcial" or faltantes:
-                    status = "Precisa descrição"
-                    crm["Observações"] = (
-                        "Extração parcial. Complete manualmente: "
-                        + (", ".join(faltantes) if faltantes else "revise a descrição da vaga.")
-                    )
-                else:
-                    status = "Precisa descrição"
-                    crm["Observações"] = "Não foi possível extrair dados automaticamente. Cole a descrição da vaga manualmente."
-                atualizar_link_pendente(planilha, item["_row_number"], crm, status)
-                processadas += 1
-            st.success(f"{processadas} link(s) pendente(s) processado(s).")
-        except (SheetsClientError, OpenAIClientError) as exc:
-            st.error(str(exc))
-        except Exception as exc:
-            st.error(f"Não foi possível processar links pendentes: {exc}")
-
-    st.markdown("### Entrada manual assistida")
-    with st.form("radar_manual_form"):
-        c1, c2 = st.columns(2)
-        empresa = c1.text_input("Empresa")
-        cargo = c2.text_input("Cargo")
-        link = st.text_input("Link da vaga")
-        c3, c4, c5 = st.columns(3)
-        local = c3.text_input("Local")
-        modelo = c4.selectbox("Modelo", ["", "Remoto", "Híbrido", "Presencial"])
-        regime = c5.selectbox("Regime", ["", "CLT", "PJ", "Freelance", "Internacional"])
-        c6, c7 = st.columns(2)
-        senioridade = c6.text_input("Senioridade")
-        area_principal = c7.text_input("Área principal")
-        descricao = st.text_area("Descrição da vaga", height=180)
-        observacoes = st.text_area("Observações", height=90)
-        salvar_manual = st.form_submit_button("Salvar em Vagas_CRM", type="primary")
-
-    if salvar_manual:
-        radar_vaga = normalizar_para_radar(
-            {
-                "empresa": empresa,
-                "cargo": cargo,
-                "link": link,
-                "local": local,
-                "modelo": modelo,
-                "regime": regime,
-                "senioridade": senioridade,
-                "area_principal": area_principal,
-                "descricao": descricao,
-                "observacoes": observacoes,
-            },
-            "Manual assistido",
-        )
-        crm_vaga = radar_para_vagas_crm({**radar_vaga, "descricao": descricao, "observacoes": observacoes})
-        crm_vaga["Plataforma"] = inferir_plataforma(link)
-        try:
-            inseridas, avisos = enviar_para_vagas_crm(planilha, [crm_vaga])
-            if inseridas:
-                st.success("Vaga enviada para Vagas_CRM com status Avaliar.")
-            for aviso in avisos:
-                st.warning(aviso)
-        except SheetsClientError as exc:
-            st.error(str(exc))
-
-    st.markdown("### Busca Adzuna")
-    adzuna_id = st.secrets.get("ADZUNA_APP_ID")
-    adzuna_key = st.secrets.get("ADZUNA_APP_KEY")
-    if not adzuna_id or not adzuna_key:
-        st.warning("Adzuna não configurado. Use entrada manual ou configure as chaves.")
-    else:
-        c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
-        termo = c1.text_input("Termo", value="Creative Director")
-        pais = c2.text_input("País", value="br")
-        local_adzuna = c3.text_input("Local Adzuna", value="")
-        qtd = c4.number_input("Quantidade", min_value=1, max_value=50, value=10)
-        if st.button("Buscar no Adzuna", use_container_width=True):
+        st.markdown("### Processar links pendentes")
+        if st.button("Processar links pendentes", use_container_width=True):
             try:
-                resultados = buscar_adzuna(adzuna_id, adzuna_key, termo, pais, local_adzuna, int(qtd))
+                pendentes = ler_links_pendentes(planilha)
+                for item in pendentes:
+                    link_pendente = item.get("Link", "")
+                    if not link_pendente:
+                        atualizar_link_pendente(
+                            planilha,
+                            item["_row_number"],
+                            {"Observações": "Não foi possível extrair dados automaticamente. Cole a descrição da vaga manualmente."},
+                            "Precisa descrição",
+                        )
+                        continue
+                    duplicada_linha = encontrar_duplicata_link(planilha, link_pendente, item["_row_number"])
+                    if duplicada_linha:
+                        atualizar_link_pendente(
+                            planilha,
+                            item["_row_number"],
+                            {"Observações": f"Link duplicado. Já existe na linha {duplicada_linha}."},
+                            "Duplicada",
+                        )
+                        continue
+                    extraido = extrair_dados_link(link_pendente)
+                    crm = preview_para_crm(extraido)
+                    faltantes = campos_faltantes_para_avaliacao(crm)
+                    status = "Avaliar" if extraido.get("status_extracao") == "sucesso" and not faltantes else "Precisa descrição"
+                    atualizar_link_pendente(planilha, item["_row_number"], crm, status)
+                st.success(f"{len(pendentes)} link(s) pendente(s) processado(s).")
+            except Exception as exc:
+                st.error(f"Não foi possível processar links pendentes: {exc}")
+
+        st.markdown("### Entrada manual assistida")
+        with st.form("radar_manual_form"):
+            c1, c2 = st.columns(2)
+            empresa = c1.text_input("Empresa")
+            cargo = c2.text_input("Cargo")
+            link = st.text_input("Link da vaga")
+            local = st.text_input("Local")
+            descricao = st.text_area("Descrição da vaga", height=160)
+            observacoes = st.text_area("Observações", height=80)
+            salvar_manual = st.form_submit_button("Salvar em Vagas_CRM", type="primary")
+
+        if salvar_manual:
+            radar_vaga = normalizar_para_radar(
+                {"empresa": empresa, "cargo": cargo, "link": link, "local": local, "descricao": descricao, "observacoes": observacoes},
+                "Manual assistido",
+            )
+            try:
+                inseridas, avisos = enviar_para_vagas_crm(planilha, [radar_para_vagas_crm({**radar_vaga, "descricao": descricao})])
+                st.success(f"{inseridas} vaga(s) enviada(s) para Vagas_CRM.")
+                for aviso in avisos:
+                    st.warning(aviso)
+            except SheetsClientError as exc:
+                st.error(str(exc))
+
+        st.markdown("### Busca Adzuna manual")
+        adzuna_id = st.secrets.get("ADZUNA_APP_ID")
+        adzuna_key = st.secrets.get("ADZUNA_APP_KEY")
+        if not adzuna_id or not adzuna_key:
+            st.warning("Adzuna não configurado.")
+        else:
+            termo = st.text_input("Termo Adzuna", value="Creative Director")
+            if st.button("Buscar no Adzuna", use_container_width=True):
+                resultados = buscar_adzuna(adzuna_id, adzuna_key, termo, "br", "", 10)
                 registrar_radar_resultados(planilha, resultados)
                 st.session_state.radar_resultados = resultados
-                st.success(f"{len(resultados)} resultados do Adzuna registrados.")
-            except Exception as exc:
-                st.error(f"Não foi possível buscar no Adzuna: {exc}")
+                st.success(f"{len(resultados)} resultados registrados.")
 
-    st.markdown("### Greenhouse / Lever")
-    if st.button("Buscar empresas-alvo públicas", use_container_width=True):
-        resultados = []
-        avisos = []
-        try:
+        st.markdown("### Greenhouse / Lever manual")
+        if st.button("Buscar empresas-alvo públicas", use_container_width=True):
+            resultados = []
+            avisos = []
             for empresa_cfg in ler_empresas_alvo(planilha):
                 plataforma = str(empresa_cfg.get("plataforma", "")).strip().lower()
                 empresa_nome = str(empresa_cfg.get("empresa", "")).strip()
-                site = str(empresa_cfg.get("site_carreiras", "")).strip()
+                site = str(empresa_cfg.get("board_token") or empresa_cfg.get("site_carreiras", "")).strip()
                 try:
                     if plataforma == "greenhouse":
                         resultados.extend(buscar_greenhouse(site, empresa_nome))
                     elif plataforma == "lever":
                         resultados.extend(buscar_lever(site, empresa_nome))
-                    elif plataforma == "gupy":
-                        avisos.append(f"{empresa_nome}: Gupy automático não implementado nesta versão.")
-                    else:
-                        avisos.append(f"{empresa_nome}: plataforma não suportada para busca automática.")
                 except Exception as exc:
-                    avisos.append(f"{empresa_nome}: busca automática indisponível ({exc}).")
+                    avisos.append(f"{empresa_nome}: busca pública indisponível ({exc}).")
             registrar_radar_resultados(planilha, resultados)
             st.session_state.radar_resultados = resultados
             st.success(f"{len(resultados)} resultados públicos registrados.")
             for aviso in avisos:
                 st.warning(aviso)
-        except SheetsClientError as exc:
-            st.error(str(exc))
 
-    st.markdown("### Radar_Resultados")
-    if st.button("Carregar Radar_Resultados da planilha", use_container_width=True):
-        try:
+        st.markdown("### Radar_Resultados")
+        if st.button("Carregar Radar_Resultados da planilha", use_container_width=True):
             st.session_state.radar_resultados = ler_radar_resultados(planilha)
-        except SheetsClientError as exc:
-            st.error(str(exc))
 
-    resultados = st.session_state.radar_resultados
-    if not resultados:
-        st.caption("Busque vagas ou use a entrada manual para popular resultados nesta sessão.")
-        return
-
-    linhas = [{"selecionar": False, **item} for item in resultados]
-    editado = st.data_editor(
-        linhas,
-        use_container_width=True,
-        hide_index=True,
-        key="radar_resultados_editor",
-    )
-    selecionadas = [linha for linha in editado if linha.get("selecionar")]
-    if st.button("Enviar selecionadas para Vagas_CRM", type="primary", use_container_width=True):
-        vagas_crm = [radar_para_vagas_crm(vaga) for vaga in selecionadas]
-        try:
-            inseridas, avisos = enviar_para_vagas_crm(planilha, vagas_crm)
-            st.success(f"{inseridas} vaga(s) enviada(s) para Vagas_CRM.")
-            for aviso in avisos:
-                st.warning(aviso)
-        except SheetsClientError as exc:
-            st.error(str(exc))
+        resultados = st.session_state.radar_resultados
+        if resultados:
+            linhas = [{"selecionar": False, **item} for item in resultados]
+            editado = st.data_editor(linhas, use_container_width=True, hide_index=True, key="radar_resultados_editor")
+            selecionadas = [linha for linha in editado if linha.get("selecionar")]
+            if st.button("Enviar selecionadas para Vagas_CRM", type="primary", use_container_width=True):
+                vagas_crm = [radar_para_vagas_crm(vaga) for vaga in selecionadas]
+                inseridas, avisos = enviar_para_vagas_crm(planilha, vagas_crm)
+                st.success(f"{inseridas} vaga(s) enviada(s) para Vagas_CRM.")
+                for aviso in avisos:
+                    st.warning(aviso)
 
 
 def render_agente2() -> None:

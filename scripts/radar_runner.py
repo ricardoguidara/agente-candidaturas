@@ -20,11 +20,9 @@ from utils.job_radar import (  # noqa: E402
 )
 from utils.job_sources import (  # noqa: E402
     GUPY_MANUAL_OBSERVATION,
-    buscar_empregando_brasil,
-    buscar_google_programmable,
     buscar_gupy_site,
-    buscar_recruit_net,
     is_gupy_url,
+    search_jobs_openai_web,
 )
 from utils.sheets import (  # noqa: E402
     SheetsClientError,
@@ -56,6 +54,8 @@ class RadarStats:
     gupy_links_pendentes: int = 0
     gupy_precisa_descricao: int = 0
     gupy_erros: int = 0
+    web_searches_executadas: int = 0
+    urls_encontradas_web: int = 0
     erros: int = 0
 
 
@@ -124,6 +124,31 @@ def _contar_precisa_descricao(vagas_crm: list[dict[str, Any]]) -> int:
 def _registrar_encontrados(resultados: list[dict[str, Any]], fontes: dict[str, FonteStats]) -> None:
     for fonte, vagas in _agrupar_por_fonte(resultados).items():
         fontes.setdefault(fonte, FonteStats()).encontrados += len(vagas)
+
+
+def _web_search_specs(configs: list[dict[str, Any]], max_calls: int) -> list[dict[str, Any]]:
+    sources = [
+        {"fonte": "LinkedIn", "domains": ["linkedin.com"]},
+        {"fonte": "Gupy", "domains": ["gupy.io"]},
+        {"fonte": "Recruit.net", "domains": ["recruit.net"]},
+        {"fonte": "Empregando Brasil", "domains": ["empregandobrasil.com.br"]},
+        {"fonte": "OpenAI Web Search", "domains": []},
+    ]
+    active_configs = configs or []
+    specs = []
+    for index, config in enumerate(active_configs):
+        source = sources[index % len(sources)]
+        termo = str(config.get("termo_busca", "")).strip()
+        local = str(config.get("local", "")).strip()
+        modelo = str(config.get("modelo", "")).strip()
+        idioma = str(config.get("idioma", "")).strip()
+        if not termo:
+            continue
+        query = " ".join(part for part in [termo, local, modelo, idioma, "public job opening"] if part)
+        specs.append({**source, "query": query})
+        if len(specs) >= max_calls:
+            break
+    return specs
 
 
 def _crm_from_extracao(extraido: dict[str, Any]) -> dict[str, Any]:
@@ -255,6 +280,48 @@ def _buscar_adzuna_por_config(configs: list[dict[str, Any]], stats: RadarStats, 
     return resultados
 
 
+def _buscar_openai_web(configs: list[dict[str, Any]], stats: RadarStats, fontes: dict[str, FonteStats]) -> list[dict[str, Any]]:
+    max_calls = max(0, _env_int("RADAR_MAX_WEB_SEARCH_CALLS", 8))
+    if max_calls == 0:
+        print("RADAR_MAX_WEB_SEARCH_CALLS=0. Pulando OpenAI Web Search.")
+        return []
+    if not os.getenv("OPENAI_API_KEY"):
+        stats.erros += 1
+        fontes.setdefault("OpenAI Web Search", FonteStats()).erros += 1
+        print("OPENAI_API_KEY não configurada. OpenAI Web Search não foi executado.")
+        return []
+
+    model = os.getenv("OPENAI_RADAR_MODEL") or os.getenv("OPENAI_MODEL")
+    resultados = []
+    specs = _web_search_specs(configs, max_calls)
+    print(f"OpenAI Web Search: chamadas planejadas={len(specs)}; limite={max_calls}.")
+    for spec in specs:
+        fonte = spec["fonte"]
+        fonte_stats = fontes.setdefault(fonte, FonteStats())
+        try:
+            encontrados, urls = search_jobs_openai_web(
+                query=spec["query"],
+                allowed_domains=spec["domains"],
+                fonte=fonte,
+                max_results=_env_int("RADAR_WEB_RESULTS_PER_QUERY", 8),
+                model=model,
+            )
+            stats.buscas_executadas += 1
+            stats.web_searches_executadas += 1
+            stats.urls_encontradas_web += len(urls)
+            stats.vagas_encontradas += len(encontrados)
+            fonte_stats.buscas += 1
+            resultados.extend(encontrados)
+            print(f"OpenAI Web Search/{fonte}: query='{spec['query']}'; urls={len(urls)}; vagas={len(encontrados)}.")
+            for url in urls[:12]:
+                print(f"- URL encontrada: {url}")
+        except Exception as exc:
+            stats.erros += 1
+            fonte_stats.erros += 1
+            print(f"Erro OpenAI Web Search/{fonte}: {exc}")
+    return resultados
+
+
 def _buscar_empresas_alvo(empresas: list[dict[str, Any]], stats: RadarStats, fontes: dict[str, FonteStats]) -> list[dict[str, Any]]:
     resultados = []
     gupy_token = os.getenv("GUPY_API_TOKEN", "")
@@ -300,63 +367,6 @@ def _buscar_empresas_alvo(empresas: list[dict[str, Any]], stats: RadarStats, fon
             if plataforma == "gupy":
                 stats.gupy_erros += 1
             print(f"Erro/bloqueio {nome}/{plataforma}: {exc}")
-    return resultados
-
-
-def _buscar_html_por_config(
-    nome_fonte: str,
-    buscar,
-    configs: list[dict[str, Any]],
-    stats: RadarStats,
-    fontes: dict[str, FonteStats],
-) -> list[dict[str, Any]]:
-    quantidade = _env_int("RADAR_RESULTS_PER_SOURCE", 10)
-    fonte_stats = fontes.setdefault(nome_fonte, FonteStats())
-    resultados = []
-    for config in configs:
-        termo = str(config.get("termo_busca", "")).strip()
-        if not termo:
-            continue
-        local = str(config.get("local", "")).strip()
-        try:
-            encontrados = buscar(termo, local, quantidade)
-            stats.buscas_executadas += 1
-            stats.vagas_encontradas += len(encontrados)
-            fonte_stats.buscas += 1
-            resultados.extend(encontrados)
-            print(f"{nome_fonte}: {len(encontrados)} vaga(s) para termo '{termo}'.")
-        except Exception as exc:
-            stats.erros += 1
-            fonte_stats.erros += 1
-            print(f"Erro {nome_fonte} termo '{termo}': {exc}")
-    return resultados
-
-
-def _buscar_web_por_config(configs: list[dict[str, Any]], stats: RadarStats, fontes: dict[str, FonteStats]) -> list[dict[str, Any]]:
-    api_key = os.getenv("GOOGLE_SEARCH_API_KEY")
-    cx = os.getenv("GOOGLE_SEARCH_CX")
-    fonte_stats = fontes.setdefault("Busca web", FonteStats())
-    if not api_key or not cx:
-        print("Busca web opcional não configurada. Pulando Google Programmable Search.")
-        return []
-
-    quantidade = _env_int("RADAR_WEB_RESULTS_PER_QUERY", 10)
-    resultados = []
-    for config in configs:
-        termo = str(config.get("termo_busca", "")).strip()
-        if not termo:
-            continue
-        try:
-            encontrados = buscar_google_programmable(api_key, cx, termo, quantidade)
-            stats.buscas_executadas += 1
-            stats.vagas_encontradas += len(encontrados)
-            fonte_stats.buscas += 1
-            resultados.extend(encontrados)
-            print(f"Busca web: {len(encontrados)} link(s) para termo '{termo}'.")
-        except Exception as exc:
-            stats.erros += 1
-            fonte_stats.erros += 1
-            print(f"Erro Busca web termo '{termo}': {exc}")
     return resultados
 
 
@@ -413,11 +423,9 @@ def main() -> int:
 
     resultados = []
     lotes = [
-        _buscar_adzuna_por_config(configs, stats, fontes),
+        _buscar_openai_web(configs, stats, fontes),
         _buscar_empresas_alvo(empresas, stats, fontes),
-        _buscar_html_por_config("Empregando Brasil", buscar_empregando_brasil, configs, stats, fontes),
-        _buscar_html_por_config("Recruit.net", buscar_recruit_net, configs, stats, fontes),
-        _buscar_web_por_config(configs, stats, fontes),
+        _buscar_adzuna_por_config(configs, stats, fontes),
     ]
     for lote in lotes:
         _registrar_encontrados(lote, fontes)
@@ -443,6 +451,8 @@ def main() -> int:
     print(f"Buscas executadas: {stats.buscas_executadas}")
     print(f"Vagas encontradas: {stats.vagas_encontradas}")
     print(f"Vagas inseridas: {stats.vagas_inseridas}")
+    print(f"Web searches executadas: {stats.web_searches_executadas}")
+    print(f"URLs encontradas via web search: {stats.urls_encontradas_web}")
     print(f"Ignoradas por duplicata: {stats.ignoradas_duplicata}")
     print(f"Ignoradas por baixa aderência: {stats.ignoradas_baixa_aderencia}")
     print(f"Links pendentes encontrados: {stats.links_pendentes_encontrados}")

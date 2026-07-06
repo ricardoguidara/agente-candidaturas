@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Any
-from urllib.parse import quote_plus, urljoin, urlparse
+from urllib.parse import parse_qsl, quote_plus, urlencode, urljoin, urlparse, urlunparse
 
 import requests
 from bs4 import BeautifulSoup
+from openai import OpenAI
 
 from utils.job_radar import normalizar_para_radar, resumir_html
 
@@ -20,6 +22,9 @@ GUPY_MANUAL_OBSERVATION = (
     "Link Gupy detectado, mas não foi possível extrair a descrição completa automaticamente. "
     "Cole a descrição da vaga manualmente."
 )
+DEFAULT_OPENAI_RADAR_MODEL = "gpt-4.1-mini"
+TRACKING_PARAMS_PREFIXES = ("utm_",)
+TRACKING_PARAMS = {"fbclid", "gclid", "msclkid", "mc_cid", "mc_eid", "trk", "ref"}
 
 
 def _get(url: str, params: dict[str, Any] | None = None) -> str:
@@ -50,8 +55,215 @@ def _get_json(url: str, token: str = "", params: dict[str, Any] | None = None) -
     return response.json()
 
 
+def normalize_job_url(url: str) -> str:
+    parsed = urlparse(str(url or "").strip())
+    if not parsed.scheme or not parsed.netloc:
+        return ""
+    query = [
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if key.lower() not in TRACKING_PARAMS
+        and not any(key.lower().startswith(prefix) for prefix in TRACKING_PARAMS_PREFIXES)
+    ]
+    cleaned = parsed._replace(
+        scheme=parsed.scheme.lower(),
+        netloc=parsed.netloc.lower().removeprefix("www."),
+        path=parsed.path.rstrip("/"),
+        query=urlencode(query, doseq=True),
+        fragment="",
+    )
+    return urlunparse(cleaned)
+
+
 def _texto_limpo(node) -> str:
     return re.sub(r"\s+", " ", node.get_text(" ", strip=True)).strip() if node else ""
+
+
+def _json_from_text(text: str) -> dict[str, Any]:
+    cleaned = (text or "").strip()
+    cleaned = re.sub(r"^```(?:json)?", "", cleaned, flags=re.IGNORECASE).strip()
+    cleaned = re.sub(r"```$", "", cleaned).strip()
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start >= 0 and end > start:
+        cleaned = cleaned[start : end + 1]
+    payload = json.loads(cleaned)
+    return payload if isinstance(payload, dict) else {}
+
+
+def _response_to_dict(response: Any) -> dict[str, Any]:
+    if hasattr(response, "model_dump"):
+        return response.model_dump()
+    if isinstance(response, dict):
+        return response
+    return json.loads(json.dumps(response, default=lambda value: getattr(value, "__dict__", str(value))))
+
+
+def _response_text(response: Any) -> str:
+    output_text = getattr(response, "output_text", "")
+    if output_text:
+        return str(output_text)
+    payload = _response_to_dict(response)
+    texts: list[str] = []
+    for item in payload.get("output", []):
+        if item.get("type") != "message":
+            continue
+        for content in item.get("content", []):
+            text = content.get("text") or content.get("output_text")
+            if text:
+                texts.append(str(text))
+    return "\n".join(texts)
+
+
+def _collect_urls_from_sources(value: Any, in_source_context: bool = False) -> set[str]:
+    urls: set[str] = set()
+    if isinstance(value, dict):
+        value_type = str(value.get("type", "")).lower()
+        source_context = in_source_context or value_type in {
+            "url_citation",
+            "web_search_call",
+            "web_search_result",
+        }
+        if source_context:
+            for key in ("url", "uri", "link"):
+                if value.get(key):
+                    normalized = normalize_job_url(str(value[key]))
+                    if normalized:
+                        urls.add(normalized)
+        for key, child in value.items():
+            child_context = source_context or key in {
+                "annotations",
+                "sources",
+                "source",
+                "results",
+                "search_results",
+                "citations",
+            }
+            urls.update(_collect_urls_from_sources(child, child_context))
+    elif isinstance(value, list):
+        for child in value:
+            urls.update(_collect_urls_from_sources(child, in_source_context))
+    return urls
+
+
+def _openai_response_with_web_search(client: OpenAI, model: str, prompt: str, allowed_domains: list[str]) -> Any:
+    filters = {"allowed_domains": allowed_domains} if allowed_domains else None
+    tool_variants = [
+        {"type": "web_search", "search_context_size": "low", **({"filters": filters} if filters else {})},
+        {"type": "web_search_preview", "search_context_size": "low"},
+    ]
+    last_error: Exception | None = None
+    for tool in tool_variants:
+        for tool_choice in ({"type": tool["type"]}, "required", None):
+            try:
+                kwargs = {
+                    "model": model,
+                    "input": prompt,
+                    "tools": [tool],
+                }
+                if tool_choice is not None:
+                    kwargs["tool_choice"] = tool_choice
+                return client.responses.create(**kwargs)
+            except Exception as exc:
+                last_error = exc
+    raise RuntimeError(f"OpenAI web_search indisponível: {last_error}")
+
+
+def search_jobs_openai_web(
+    query: str,
+    allowed_domains: list[str] | None = None,
+    fonte: str = "OpenAI Web Search",
+    max_results: int = 8,
+    model: str | None = None,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY não configurada para OpenAI Web Search.")
+
+    selected_model = model or os.getenv("OPENAI_RADAR_MODEL") or DEFAULT_OPENAI_RADAR_MODEL
+    domains_text = ", ".join(allowed_domains or []) or "public career pages and job boards"
+    prompt = f"""
+Use web search to find public job openings aligned with Ricardo Guidara's profile.
+
+Query: {query}
+Allowed/preferred domains: {domains_text}
+
+Prioritize: AI Creative Director, Creative Director, Head of Creative, Head de Criação,
+Creative Lead, Gerente de Criação, Gerente de Marketing, Gerente de Conteúdo,
+Head of Content, Content Lead, Creative Operations Lead, AI Creative Lead,
+Brand Content Manager.
+
+Areas: creative leadership, creative strategy, generative AI, creative operations,
+storytelling, content, audiovisual, marketing, branding, corporate education.
+
+Location rules:
+- Brazil: São Paulo, São Paulo region, remote Brazil, hybrid São Paulo.
+- International: remote only.
+- Fluent English is not a red flag.
+
+Avoid operational graphic designer, operational social media, pure motion designer,
+pure video editor, junior/mid analyst and operational paid traffic roles.
+
+Return only valid JSON:
+{{
+  "jobs": [
+    {{
+      "fonte": "{fonte}",
+      "plataforma": "",
+      "empresa": "",
+      "cargo": "",
+      "link": "",
+      "local": "",
+      "modelo": "",
+      "regime": "",
+      "senioridade": "",
+      "area_principal": "",
+      "descricao_vaga": "",
+      "descricao_resumida": "",
+      "observacoes": ""
+    }}
+  ]
+}}
+
+Do not invent URLs. Include only jobs whose URLs you found through web search.
+Limit to {int(max_results)} jobs.
+""".strip()
+
+    response = _openai_response_with_web_search(OpenAI(api_key=api_key), selected_model, prompt, allowed_domains or [])
+    source_urls = _collect_urls_from_sources(_response_to_dict(response))
+    payload = _json_from_text(_response_text(response))
+    jobs = payload.get("jobs", [])
+    if not isinstance(jobs, list):
+        return [], sorted(source_urls)
+
+    normalized_jobs = []
+    for job in jobs:
+        if not isinstance(job, dict):
+            continue
+        normalized_url = normalize_job_url(str(job.get("link", "")))
+        if not normalized_url or normalized_url not in source_urls:
+            continue
+        descricao = job.get("descricao_vaga") or job.get("descricao") or job.get("descricao_resumida", "")
+        normalized_jobs.append(
+            normalizar_para_radar(
+                {
+                    "empresa": job.get("empresa", ""),
+                    "cargo": job.get("cargo", ""),
+                    "link": normalized_url,
+                    "local": job.get("local", ""),
+                    "modelo": job.get("modelo", ""),
+                    "regime": job.get("regime", ""),
+                    "senioridade": job.get("senioridade", ""),
+                    "area_principal": job.get("area_principal", ""),
+                    "descricao": descricao,
+                    "descricao_resumida": job.get("descricao_resumida", descricao),
+                    "observacoes": job.get("observacoes", ""),
+                    "plataforma": job.get("plataforma", fonte),
+                },
+                job.get("fonte") or fonte,
+            )
+        )
+    return normalized_jobs, sorted(source_urls)
 
 
 def _absoluto(base_url: str, href: str) -> str:

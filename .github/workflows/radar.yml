@@ -28,9 +28,9 @@ jobs:
           ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
           ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
           GUPY_API_TOKEN: ${{ secrets.GUPY_API_TOKEN }}
-          GOOGLE_SEARCH_API_KEY: ${{ secrets.GOOGLE_SEARCH_API_KEY }}
-          GOOGLE_SEARCH_CX: ${{ secrets.GOOGLE_SEARCH_CX }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+          OPENAI_RADAR_MODEL: ${{ secrets.OPENAI_RADAR_MODEL }}
           RADAR_SCORE_MIN: 65
+          RADAR_MAX_WEB_SEARCH_CALLS: 8
         run: python scripts/radar_runner.py
