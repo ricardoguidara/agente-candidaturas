@@ -7,6 +7,7 @@ from typing import Any, Callable
 from urllib.parse import urlparse
 
 from utils.job_radar import inferir_plataforma, pontuar_vaga, resumir_html
+from utils.job_sources import GUPY_MANUAL_OBSERVATION, is_gupy_url
 
 
 MIN_TEXT_LENGTH = 500
@@ -70,6 +71,8 @@ def identificar_plataforma(url: str) -> str:
     if plataforma:
         return plataforma
     host = urlparse(url or "").netloc.lower()
+    if is_gupy_url(url):
+        return "Gupy"
     if "workable.com" in host:
         return "Workable"
     if "indeed." in host:
@@ -203,6 +206,12 @@ def _extrair_basico(url: str, html: str, final_url: str) -> dict[str, Any]:
     texto = _texto_principal(soup)
     descricao = texto or descricao_meta
     status = "sucesso" if len(descricao) >= MIN_TEXT_LENGTH else "precisa_descricao"
+    observacao = (
+        "Texto público extraído da página." if status != "precisa_descricao"
+        else "Não foi possível extrair descrição suficiente da página pública. Cole a descrição manualmente."
+    )
+    if plataforma == "Gupy" and status == "precisa_descricao":
+        observacao = GUPY_MANUAL_OBSERVATION
     return {
         "empresa": _meta(soup, "og:site_name"),
         "cargo": titulo,
@@ -217,10 +226,7 @@ def _extrair_basico(url: str, html: str, final_url: str) -> dict[str, Any]:
         "descricao_resumida": resumir_html(descricao_meta or descricao, 700),
         "fonte": "Link manual",
         "status_extracao": status,
-        "observacoes_extracao": (
-            "Texto público extraído da página." if status != "precisa_descricao"
-            else "Não foi possível extrair descrição suficiente da página pública. Cole a descrição manualmente."
-        ),
+        "observacoes_extracao": observacao,
         "_texto_extraido": descricao,
     }
 
@@ -251,6 +257,11 @@ def extrair_dados_link(
         html, final_url = _baixar_html(url)
         dados = _extrair_basico(url, html, final_url)
     except Exception as exc:
+        observacao = (
+            GUPY_MANUAL_OBSERVATION
+            if is_gupy_url(url)
+            else f"Página pública indisponível ou bloqueada: {exc}. Cole a descrição manualmente."
+        )
         dados = {
             "empresa": "",
             "cargo": "",
@@ -265,7 +276,7 @@ def extrair_dados_link(
             "descricao_resumida": "",
             "fonte": "Link manual",
             "status_extracao": "precisa_descricao",
-            "observacoes_extracao": f"Página pública indisponível ou bloqueada: {exc}. Cole a descrição manualmente.",
+            "observacoes_extracao": observacao,
             "_texto_extraido": "",
         }
 

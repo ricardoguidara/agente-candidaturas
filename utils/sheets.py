@@ -34,6 +34,7 @@ EMPRESAS_ALVO_HEADERS = [
     "prioridade",
     "plataforma",
     "site_carreiras",
+    "board_token",
     "observacao",
     "ativo",
 ]
@@ -70,6 +71,155 @@ VAGAS_CRM_RADAR_HEADERS = [
     "Status",
     "Descrição da vaga",
     "Observações",
+    "Score preliminar",
+]
+DEFAULT_RADAR_CONFIG_ROWS = [
+    {
+        "termo_busca": "AI Creative Director",
+        "local": "Remote",
+        "idioma": "EN",
+        "modelo": "Remoto",
+        "prioridade": "Alta",
+        "ativo": "Sim",
+        "observacao": "",
+    },
+    {
+        "termo_busca": "Creative Director",
+        "local": "Brazil",
+        "idioma": "EN/PT",
+        "modelo": "Remoto/Híbrido",
+        "prioridade": "Alta",
+        "ativo": "Sim",
+        "observacao": "",
+    },
+    {
+        "termo_busca": "Head of Creative",
+        "local": "Brazil",
+        "idioma": "EN/PT",
+        "modelo": "Remoto/Híbrido",
+        "prioridade": "Alta",
+        "ativo": "Sim",
+        "observacao": "",
+    },
+    {
+        "termo_busca": "Gerente de Criação",
+        "local": "São Paulo",
+        "idioma": "PT",
+        "modelo": "Híbrido",
+        "prioridade": "Alta",
+        "ativo": "Sim",
+        "observacao": "",
+    },
+    {
+        "termo_busca": "Gerente de Marketing",
+        "local": "São Paulo",
+        "idioma": "PT",
+        "modelo": "Híbrido",
+        "prioridade": "Média",
+        "ativo": "Sim",
+        "observacao": "",
+    },
+    {
+        "termo_busca": "Content Lead",
+        "local": "Remote",
+        "idioma": "EN",
+        "modelo": "Remoto",
+        "prioridade": "Alta",
+        "ativo": "Sim",
+        "observacao": "",
+    },
+    {
+        "termo_busca": "Creative Operations Lead",
+        "local": "Remote",
+        "idioma": "EN",
+        "modelo": "Remoto",
+        "prioridade": "Alta",
+        "ativo": "Sim",
+        "observacao": "",
+    },
+    {
+        "termo_busca": "Head of Content",
+        "local": "Brazil",
+        "idioma": "EN/PT",
+        "modelo": "Remoto/Híbrido",
+        "prioridade": "Alta",
+        "ativo": "Sim",
+        "observacao": "",
+    },
+]
+DEFAULT_EMPRESAS_ALVO_ROWS = [
+    {
+        "empresa": "Superside",
+        "prioridade": "Alta",
+        "plataforma": "Site próprio",
+        "site_carreiras": "https://careers.superside.com/",
+        "board_token": "",
+        "observacao": "IA/criação global",
+        "ativo": "Sim",
+    },
+    {
+        "empresa": "Canva",
+        "prioridade": "Alta",
+        "plataforma": "Site próprio",
+        "site_carreiras": "https://www.lifeatcanva.com/en/jobs/",
+        "board_token": "",
+        "observacao": "conteúdo/brand",
+        "ativo": "Sim",
+    },
+    {
+        "empresa": "Red Bull",
+        "prioridade": "Alta",
+        "plataforma": "Site próprio",
+        "site_carreiras": "https://jobs.redbull.com/",
+        "board_token": "",
+        "observacao": "marca/conteúdo",
+        "ativo": "Sim",
+    },
+    {
+        "empresa": "Yahoo",
+        "prioridade": "Alta",
+        "plataforma": "Site próprio",
+        "site_carreiras": "https://www.yahooinc.com/careers/",
+        "board_token": "",
+        "observacao": "creative/content",
+        "ativo": "Sim",
+    },
+    {
+        "empresa": "Wellhub",
+        "prioridade": "Média",
+        "plataforma": "Greenhouse/Lever/Site próprio",
+        "site_carreiras": "",
+        "board_token": "",
+        "observacao": "marketing/conteúdo",
+        "ativo": "Sim",
+    },
+    {
+        "empresa": "Hotmart",
+        "prioridade": "Média",
+        "plataforma": "Site próprio",
+        "site_carreiras": "https://hotmart.com/pt-br/careers",
+        "board_token": "",
+        "observacao": "conteúdo/marketing",
+        "ativo": "Sim",
+    },
+    {
+        "empresa": "Nubank",
+        "prioridade": "Média",
+        "plataforma": "Site próprio",
+        "site_carreiras": "https://international.nubank.com.br/careers/",
+        "board_token": "",
+        "observacao": "brand/marketing",
+        "ativo": "Sim",
+    },
+    {
+        "empresa": "iFood",
+        "prioridade": "Média",
+        "plataforma": "Site próprio",
+        "site_carreiras": "https://carreiras.ifood.com.br/",
+        "board_token": "",
+        "observacao": "marketing/conteúdo",
+        "ativo": "Sim",
+    },
 ]
 STATUS_LINK_PENDENTE_CANONICO = "Link pendente"
 STATUS_LINK_PENDENTE_VARIANTES = {
@@ -249,9 +399,11 @@ def ler_links_pendentes(planilha: gspread.Spreadsheet) -> list[dict[str, Any]]:
 
 
 def garantir_abas_radar(planilha: gspread.Spreadsheet) -> None:
-    _obter_ou_criar_worksheet(planilha, RADAR_CONFIG_WORKSHEET, RADAR_CONFIG_HEADERS)
-    _obter_ou_criar_worksheet(planilha, EMPRESAS_ALVO_WORKSHEET, EMPRESAS_ALVO_HEADERS)
+    ws_config = _obter_ou_criar_worksheet(planilha, RADAR_CONFIG_WORKSHEET, RADAR_CONFIG_HEADERS)
+    ws_empresas = _obter_ou_criar_worksheet(planilha, EMPRESAS_ALVO_WORKSHEET, EMPRESAS_ALVO_HEADERS)
     _obter_ou_criar_worksheet(planilha, RADAR_RESULTADOS_WORKSHEET, RADAR_RESULTADOS_HEADERS)
+    _popular_se_vazio(ws_config, RADAR_CONFIG_HEADERS, DEFAULT_RADAR_CONFIG_ROWS)
+    _popular_se_vazio(ws_empresas, EMPRESAS_ALVO_HEADERS, DEFAULT_EMPRESAS_ALVO_ROWS)
 
 
 def ler_radar_config(planilha: gspread.Spreadsheet) -> list[dict[str, Any]]:
@@ -308,6 +460,15 @@ def _append_dict_row(ws: gspread.Worksheet, colunas: dict[str, int], dados: dict
         linha = ensure_row_length(linha, coluna)
         linha[coluna - 1] = valor
     ws.append_row(linha, value_input_option="USER_ENTERED")
+
+
+def _popular_se_vazio(ws: gspread.Worksheet, headers: list[str], linhas: list[dict[str, Any]]) -> None:
+    if ws.get_all_records():
+        return
+    colunas = _garantir_colunas(ws, headers)
+    for linha in linhas:
+        _append_dict_row(ws, colunas, linha)
+    _info(f"Aba `{ws.title}` populada com exemplos iniciais.")
 
 
 def registrar_radar_resultados(planilha: gspread.Spreadsheet, vagas: list[dict[str, Any]]) -> int:

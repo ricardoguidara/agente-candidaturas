@@ -10,7 +10,7 @@ Esta versão implementa o **Agente 1: Radar de Vagas Estratégicas** e o **Agent
 - Cria e usa abas de radar: `Radar_Config`, `Empresas_Alvo` e `Radar_Resultados`.
 - Permite entrada manual assistida de vagas para `Vagas_CRM`.
 - Busca vagas no Adzuna quando `ADZUNA_APP_ID` e `ADZUNA_APP_KEY` estão configurados.
-- Busca vagas públicas de empresas-alvo em Greenhouse e Lever quando a URL/slug está configurada.
+- Busca vagas públicas de empresas-alvo em Greenhouse, Lever e Gupy quando a URL/slug está configurada.
 - Lê a aba `Vagas_CRM`.
 - Filtra vagas com `Status = Avaliar`.
 - Exibe vagas pendentes e detalhes da vaga selecionada.
@@ -45,18 +45,21 @@ Empresas_Alvo
 Radar_Resultados
 ```
 
-Fontes suportadas na v0.1:
+Fontes suportadas na v0.2:
 
 - Inserir vaga por link, com tentativa de extração pública de HTML, metadados, OpenGraph e JSON-LD `JobPosting`.
 - Entrada manual assistida, incluindo links Gupy.
 - Adzuna API, opcional via secrets.
 - Greenhouse público via job board API.
 - Lever público via postings API.
+- Gupy por link manual, página pública de empresa-alvo e API opcional quando houver token/acesso.
+- Empregando Brasil e Recruit.net por busca pública HTTP/HTML.
+- LinkedIn apenas por descoberta de links públicos via busca web opcional, sem leitura logada.
 
 Limitações:
 
 - Não faz scraping de LinkedIn logado.
-- Não faz scraping automático de Gupy nesta versão.
+- Não faz scraping logado de Gupy.
 - Não usa navegador, captcha ou login.
 - Não aplica automaticamente para vagas.
 - Não burla termos de uso de plataformas.
@@ -69,6 +72,12 @@ ADZUNA_APP_KEY = "sua-adzuna-app-key"
 ```
 
 Se as chaves não estiverem configuradas, o app mostra o aviso: `Adzuna não configurado. Use entrada manual ou configure as chaves.`
+
+### Configuração das abas
+
+`Radar_Config` controla os termos automáticos de busca com as colunas `termo_busca`, `local`, `idioma`, `modelo`, `prioridade`, `ativo` e `observacao`.
+
+`Empresas_Alvo` controla buscas por empresas específicas com as colunas `empresa`, `prioridade`, `plataforma`, `site_carreiras`, `board_token`, `observacao` e `ativo`. Para Gupy, use `plataforma = Gupy` e preencha `site_carreiras` com a página pública de carreiras. `GUPY_API_TOKEN` é opcional e só será usado quando existir nos secrets.
 
 ### Inserir vaga por link
 
@@ -102,6 +111,8 @@ Ao processar um link pendente, o sistema sempre atualiza a própria linha existe
 
 Links LinkedIn e Gupy são aceitos para entrada manual. O app só tenta ler metadados ou conteúdo público. Ele não usa login, navegador, cookies, captcha, automação ou scraping agressivo. Se a descrição completa não estiver pública, a vaga deve ser complementada manualmente.
 
+Para Gupy, linhas em `Vagas_CRM` com `Status = Link pendente` e link em `gupy.io`, `jobs.gupy.io` ou `gupy.com.br` são processadas pelo runner. Se a página pública trouxer empresa, cargo e descrição suficiente, o status vira `Avaliar`. Se a descrição não puder ser extraída, o status vira `Precisa descrição` e `Observações` recebe a orientação para colar a descrição manualmente.
+
 ### Radar automático com GitHub Actions
 
 O Radar também pode rodar automaticamente fora do Streamlit pelo script:
@@ -117,7 +128,10 @@ O runner automático:
 - lê `Radar_Config`;
 - busca Adzuna quando `ADZUNA_APP_ID` e `ADZUNA_APP_KEY` existem;
 - lê `Empresas_Alvo`;
-- busca Greenhouse e Lever públicos quando `plataforma` for `Greenhouse` ou `Lever`;
+- busca Greenhouse, Lever e Gupy públicos quando `plataforma` for `Greenhouse`, `Lever` ou `Gupy`;
+- usa `GUPY_API_TOKEN` apenas se ele existir; sem token, tenta leitura pública e segue sem falhar;
+- busca Empregando Brasil e Recruit.net por HTTP/HTML público;
+- usa Google Programmable Search opcional para descobrir links públicos, inclusive LinkedIn/Gupy, quando `GOOGLE_SEARCH_API_KEY` e `GOOGLE_SEARCH_CX` existem;
 - filtra vagas por score preliminar, com padrão `RADAR_SCORE_MIN = 65`;
 - remove duplicatas por `Link` ou `Empresa + Cargo`;
 - insere novas vagas em `Vagas_CRM` com `Status = Avaliar`;
@@ -136,6 +150,9 @@ Secrets opcionais:
 ```text
 ADZUNA_APP_ID
 ADZUNA_APP_KEY
+GUPY_API_TOKEN
+GOOGLE_SEARCH_API_KEY
+GOOGLE_SEARCH_CX
 OPENAI_API_KEY
 OPENAI_MODEL
 ```

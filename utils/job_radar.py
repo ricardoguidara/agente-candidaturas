@@ -74,7 +74,7 @@ def inferir_plataforma(link: str) -> str:
         return "Greenhouse"
     if "lever.co" in host:
         return "Lever"
-    if "gupy.io" in host:
+    if "gupy.io" in host or "gupy.com.br" in host:
         return "Gupy"
     if "adzuna" in host:
         return "Adzuna"
@@ -159,6 +159,8 @@ def normalizar_para_radar(vaga: dict[str, Any], fonte: str) -> dict[str, Any]:
         "motivo": motivo,
         "red_flags": red_flags,
         "status_radar": "Novo",
+        "observacoes": vaga.get("observacoes", ""),
+        "plataforma": vaga.get("plataforma", ""),
     }
 
 
@@ -203,7 +205,7 @@ def buscar_adzuna(
 
 
 def buscar_greenhouse(site_carreiras: str, empresa: str) -> list[dict[str, Any]]:
-    slug = site_carreiras.rstrip("/").split("/")[-1]
+    slug = _extrair_slug_job_board(site_carreiras)
     if not slug:
         return []
     url = f"https://boards-api.greenhouse.io/v1/boards/{quote(slug)}/jobs?content=true"
@@ -226,7 +228,7 @@ def buscar_greenhouse(site_carreiras: str, empresa: str) -> list[dict[str, Any]]
 
 
 def buscar_lever(site_carreiras: str, empresa: str) -> list[dict[str, Any]]:
-    slug = site_carreiras.rstrip("/").split("/")[-1]
+    slug = _extrair_slug_job_board(site_carreiras)
     if not slug:
         return []
     url = f"https://api.lever.co/v0/postings/{quote(slug)}?mode=json"
@@ -258,11 +260,27 @@ def radar_para_vagas_crm(vaga: dict[str, Any]) -> dict[str, Any]:
     link = vaga.get("link", "")
     empresa = vaga.get("empresa", "")
     cargo = vaga.get("cargo", "")
+    descricao = vaga.get("descricao", vaga.get("descricao_resumida", ""))
+    plataforma = inferir_plataforma(link) or vaga.get("plataforma", "") or vaga.get("fonte", "")
+    descricao_suficiente = len(resumir_html(descricao, 5000)) >= 180
+    tem_campos_minimos = bool(str(empresa).strip() and str(cargo).strip() and str(link).strip())
+    status = "Avaliar" if tem_campos_minimos and descricao_suficiente else "Precisa descrição"
+    observacoes = vaga.get("observacoes", vaga.get("motivo", ""))
+    if plataforma in {"LinkedIn", "Gupy"} and not descricao_suficiente:
+        status = "Precisa descrição"
+        observacoes = (
+            "LinkedIn detectado por busca pública. Cole a descrição completa antes de gerar candidatura."
+            if plataforma == "LinkedIn"
+            else (
+                "Link Gupy detectado, mas não foi possível extrair a descrição completa automaticamente. "
+                "Cole a descrição da vaga manualmente."
+            )
+        )
     return {
         "ID": gerar_id_vaga(empresa, cargo, link),
         "Data encontrada": vaga.get("data_busca", date.today().isoformat()),
         "Fonte": vaga.get("fonte", ""),
-        "Plataforma": inferir_plataforma(link) or vaga.get("fonte", ""),
+        "Plataforma": plataforma,
         "Empresa": empresa,
         "Cargo": cargo,
         "Link": link,
@@ -271,9 +289,10 @@ def radar_para_vagas_crm(vaga: dict[str, Any]) -> dict[str, Any]:
         "Regime": vaga.get("regime", ""),
         "Senioridade": vaga.get("senioridade", ""),
         "Área principal": vaga.get("area_principal", ""),
-        "Status": "Avaliar",
-        "Descrição da vaga": vaga.get("descricao", vaga.get("descricao_resumida", "")),
-        "Observações": vaga.get("observacoes", vaga.get("motivo", "")),
+        "Status": status,
+        "Descrição da vaga": descricao,
+        "Observações": observacoes,
+        "Score preliminar": vaga.get("score_preliminar", ""),
     }
 
 
@@ -285,3 +304,16 @@ def campos_faltantes_para_avaliacao(vaga_crm: dict[str, Any]) -> list[str]:
         "Descrição da vaga",
     ]
     return [campo for campo in campos if not str(vaga_crm.get(campo, "")).strip()]
+
+
+def _extrair_slug_job_board(valor: str) -> str:
+    texto = str(valor or "").strip().rstrip("/")
+    if not texto:
+        return ""
+    parsed = urlparse(texto)
+    partes = [parte for parte in parsed.path.split("/") if parte]
+    if partes:
+        return partes[-1]
+    if not parsed.netloc and "." not in texto:
+        return texto
+    return ""
