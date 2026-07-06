@@ -115,8 +115,8 @@ def _response_text(response: Any) -> str:
     return "\n".join(texts)
 
 
-def _collect_urls_from_sources(value: Any, in_source_context: bool = False) -> set[str]:
-    urls: set[str] = set()
+def _collect_source_entries(value: Any, in_source_context: bool = False) -> dict[str, dict[str, str]]:
+    entries: dict[str, dict[str, str]] = {}
     if isinstance(value, dict):
         value_type = str(value.get("type", "")).lower()
         source_context = in_source_context or value_type in {
@@ -129,7 +129,14 @@ def _collect_urls_from_sources(value: Any, in_source_context: bool = False) -> s
                 if value.get(key):
                     normalized = normalize_job_url(str(value[key]))
                     if normalized:
-                        urls.add(normalized)
+                        entries.setdefault(
+                            normalized,
+                            {
+                                "url": normalized,
+                                "title": str(value.get("title") or value.get("text") or value.get("name") or ""),
+                                "snippet": str(value.get("snippet") or value.get("description") or ""),
+                            },
+                        )
         for key, child in value.items():
             child_context = source_context or key in {
                 "annotations",
@@ -139,11 +146,11 @@ def _collect_urls_from_sources(value: Any, in_source_context: bool = False) -> s
                 "search_results",
                 "citations",
             }
-            urls.update(_collect_urls_from_sources(child, child_context))
+            entries.update(_collect_source_entries(child, child_context))
     elif isinstance(value, list):
         for child in value:
-            urls.update(_collect_urls_from_sources(child, in_source_context))
-    return urls
+            entries.update(_collect_source_entries(child, in_source_context))
+    return entries
 
 
 def _openai_response_with_web_search(client: OpenAI, model: str, prompt: str, allowed_domains: list[str]) -> Any:
@@ -230,11 +237,15 @@ Limit to {int(max_results)} jobs.
 """.strip()
 
     response = _openai_response_with_web_search(OpenAI(api_key=api_key), selected_model, prompt, allowed_domains or [])
-    source_urls = _collect_urls_from_sources(_response_to_dict(response))
-    payload = _json_from_text(_response_text(response))
+    source_entries = _collect_source_entries(_response_to_dict(response))
+    source_urls = set(source_entries)
+    try:
+        payload = _json_from_text(_response_text(response))
+    except (json.JSONDecodeError, ValueError):
+        payload = {}
     jobs = payload.get("jobs", [])
     if not isinstance(jobs, list):
-        return [], sorted(source_urls)
+        jobs = []
 
     normalized_jobs = []
     for job in jobs:
@@ -263,6 +274,32 @@ Limit to {int(max_results)} jobs.
                 job.get("fonte") or fonte,
             )
         )
+    if not normalized_jobs:
+        for entry in source_entries.values():
+            title = entry.get("title") or entry["url"]
+            snippet = entry.get("snippet", "")
+            normalized_jobs.append(
+                normalizar_para_radar(
+                    {
+                        "empresa": "",
+                        "cargo": title,
+                        "link": entry["url"],
+                        "local": "",
+                        "modelo": "",
+                        "regime": "",
+                        "senioridade": "",
+                        "area_principal": "",
+                        "descricao": snippet,
+                        "descricao_resumida": snippet,
+                        "observacoes": "Vaga detectada por OpenAI Web Search. Revise a descrição antes de gerar candidatura.",
+                        "plataforma": fonte,
+                    },
+                    fonte,
+                )
+            )
+            if len(normalized_jobs) >= max_results:
+                break
+
     return normalized_jobs, sorted(source_urls)
 
 

@@ -430,6 +430,7 @@ def main() -> int:
     for lote in lotes:
         _registrar_encontrados(lote, fontes)
         resultados.extend(lote)
+    print(f"Vagas normalizadas antes do filtro de score: {len(resultados)}")
 
     try:
         registrar_radar_resultados(planilha, resultados)
