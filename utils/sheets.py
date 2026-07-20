@@ -427,7 +427,7 @@ def _obter_ou_criar_worksheet(
 
 def ler_vagas_avaliar(planilha: gspread.Spreadsheet) -> list[dict[str, Any]]:
     ws = _worksheet(planilha, VAGAS_WORKSHEET)
-    registros = ws.get_all_records()
+    registros = _get_all_records_safe(ws)
     vagas = []
     for index, registro in enumerate(registros, start=2):
         if str(registro.get("Status", "")).strip().lower() == "avaliar":
@@ -439,7 +439,7 @@ def ler_vagas_avaliar(planilha: gspread.Spreadsheet) -> list[dict[str, Any]]:
 def ler_links_pendentes(planilha: gspread.Spreadsheet) -> list[dict[str, Any]]:
     ws = _obter_ou_criar_worksheet(planilha, VAGAS_WORKSHEET, VAGAS_CRM_RADAR_HEADERS)
     colunas = _garantir_colunas(ws, VAGAS_CRM_RADAR_HEADERS)
-    registros = ws.get_all_records()
+    registros = _get_all_records_safe(ws)
     pendentes = []
     for index, registro in enumerate(registros, start=2):
         if _is_link_pendente(registro.get("Status")):
@@ -464,7 +464,7 @@ def garantir_abas_radar(planilha: gspread.Spreadsheet) -> None:
 def ler_radar_config(planilha: gspread.Spreadsheet) -> list[dict[str, Any]]:
     ws = _obter_ou_criar_worksheet(planilha, RADAR_CONFIG_WORKSHEET, RADAR_CONFIG_HEADERS)
     configs = []
-    for registro in ws.get_all_records():
+    for registro in _get_all_records_safe(ws):
         ativo = str(registro.get("ativo", "")).strip().lower()
         if ativo in {"sim", "true", "1", "ativo", "yes"}:
             configs.append(registro)
@@ -474,7 +474,7 @@ def ler_radar_config(planilha: gspread.Spreadsheet) -> list[dict[str, Any]]:
 def ler_empresas_alvo(planilha: gspread.Spreadsheet) -> list[dict[str, Any]]:
     ws = _obter_ou_criar_worksheet(planilha, EMPRESAS_ALVO_WORKSHEET, EMPRESAS_ALVO_HEADERS)
     empresas = []
-    for registro in ws.get_all_records():
+    for registro in _get_all_records_safe(ws):
         ativo = str(registro.get("ativo", "")).strip().lower()
         if ativo in {"sim", "true", "1", "ativo", "yes"}:
             empresas.append(registro)
@@ -483,7 +483,7 @@ def ler_empresas_alvo(planilha: gspread.Spreadsheet) -> list[dict[str, Any]]:
 
 def ler_radar_resultados(planilha: gspread.Spreadsheet) -> list[dict[str, Any]]:
     ws = _obter_ou_criar_worksheet(planilha, RADAR_RESULTADOS_WORKSHEET, RADAR_RESULTADOS_HEADERS)
-    return ws.get_all_records()
+    return _get_all_records_safe(ws)
 
 
 def _garantir_colunas(ws: gspread.Worksheet, colunas: list[str]) -> dict[str, int]:
@@ -517,8 +517,27 @@ def _append_dict_row(ws: gspread.Worksheet, colunas: dict[str, int], dados: dict
     ws.append_row(linha, value_input_option="USER_ENTERED")
 
 
+def _get_all_records_safe(ws: gspread.Worksheet) -> list[dict[str, Any]]:
+    values = ws.get_all_values()
+    if not values:
+        return []
+
+    header = [str(coluna).strip() for coluna in values[0]]
+    registros = []
+    for row in values[1:]:
+        if not any(str(valor).strip() for valor in row):
+            continue
+        registro: dict[str, Any] = {}
+        for index, coluna in enumerate(header):
+            if not coluna or coluna in registro:
+                continue
+            registro[coluna] = row[index] if index < len(row) else ""
+        registros.append(registro)
+    return registros
+
+
 def _popular_se_vazio(ws: gspread.Worksheet, headers: list[str], linhas: list[dict[str, Any]]) -> None:
-    if ws.get_all_records():
+    if _get_all_records_safe(ws):
         return
     colunas = _garantir_colunas(ws, headers)
     for linha in linhas:
@@ -588,7 +607,7 @@ def _resolver_coluna_observacoes(colunas: dict[str, int]) -> int | None:
 
 def diagnosticar_vagas_crm(planilha: gspread.Spreadsheet) -> dict[str, Any]:
     ws = _obter_ou_criar_worksheet(planilha, VAGAS_WORKSHEET, VAGAS_CRM_RADAR_HEADERS)
-    registros = ws.get_all_records()
+    registros = _get_all_records_safe(ws)
     contagem_status: dict[str, int] = {}
     link_pendente_exato = 0
 
@@ -628,7 +647,7 @@ def encontrar_duplicata_link(planilha: gspread.Spreadsheet, link: str, row_numbe
     if not link:
         return None
     ws = _obter_ou_criar_worksheet(planilha, VAGAS_WORKSHEET, VAGAS_CRM_RADAR_HEADERS)
-    registros = ws.get_all_records()
+    registros = _get_all_records_safe(ws)
     link_normalizado = _normalizar_link(link)
     for index, registro in enumerate(registros, start=2):
         if index == row_number:
@@ -648,7 +667,7 @@ def enviar_para_vagas_crm(planilha: gspread.Spreadsheet, vagas: list[dict[str, A
             VAGAS_CRM_RADAR_HEADERS,
         )
         colunas = _garantir_colunas(ws, VAGAS_CRM_RADAR_HEADERS)
-        existentes = ws.get_all_records()
+        existentes = _get_all_records_safe(ws)
         avisos = []
         inseridas = 0
         for vaga in vagas:
